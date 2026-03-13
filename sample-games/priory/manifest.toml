@@ -1,0 +1,11 @@
+id = "priory"
+name = "Priory"
+version = "0.1.0"
+exec = "bin/priory"
+icon = "icon.ppm"
+splash = "splash.ppm"
+sdk_version = "1"
+author = "PixelPal OS"
+description = "A top-down pilgrimage RPG through Saint Edburga Priory, Bellfield Town, and Candlewharf."
+supports_network_lan = false
+min_os_version = "0.1.0"

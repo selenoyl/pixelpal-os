@@ -16,6 +16,7 @@ Current direction:
 Current bundled games:
 
 - `BotByte` - maze chase game
+- `Priory` - top-down pilgrimage RPG chapter set across a priory, market town, and wharf
 - `Slinkbit` - snake-style cable game
 - `Stonefall` - falling-block puzzle game
 

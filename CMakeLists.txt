@@ -85,6 +85,7 @@ add_subdirectory(launcher)
 
 if(PIXELPAL_BUILD_SAMPLE_GAMES)
   add_subdirectory(sample-games/botbite)
+  add_subdirectory(sample-games/priory)
   add_subdirectory(sample-games/slinkbit)
   add_subdirectory(sample-games/stonefall)
   if(PIXELPAL_BUILD_SHELVED_GAMES)
