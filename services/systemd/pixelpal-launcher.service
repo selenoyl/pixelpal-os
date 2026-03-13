@@ -1,0 +1,20 @@
+[Unit]
+Description=PixelPal launcher session
+After=systemd-user-sessions.service pixelpal-statusd.service
+Requires=pixelpal-preflight.service pixelpal-statusd.service
+
+[Service]
+Type=simple
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+Environment=PIXELPAL_GAMES_ROOT=/opt/pixelpal/games
+ExecStart=/usr/lib/pixelpal/launcher/pixelpal-launcher --games-root /opt/pixelpal/games --catalog /var/cache/pixelpal/manifests --status-root /run/pixelpal/status --runner /usr/lib/pixelpal/services/pixelpal-run.sh
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=pixelpal.target

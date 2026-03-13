@@ -1,0 +1,39 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "linux-debug",
+      "displayName": "Linux Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/linux-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "windows-debug",
+      "displayName": "Windows Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/windows-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "PIXELPAL_BUILD_SAMPLE_GAMES": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "linux-debug",
+      "configurePreset": "linux-debug"
+    },
+    {
+      "name": "windows-debug",
+      "configurePreset": "windows-debug"
+    }
+  ]
+}

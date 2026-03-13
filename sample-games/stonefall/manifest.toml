@@ -1,0 +1,12 @@
+id = "stonefall"
+name = "Stonefall"
+version = "0.1.0"
+exec = "bin/stonefall"
+icon = "icon.ppm"
+splash = "splash.ppm"
+sdk_version = "1"
+author = "PixelPal OS"
+description = "A compact falling-block puzzle game used for PixelPal bring-up."
+supports_network_lan = false
+min_os_version = "0.1.0"
+

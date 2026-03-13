@@ -1,0 +1,11 @@
+id = "slinkbit"
+name = "Slinkbit"
+version = "0.1.0"
+exec = "bin/slinkbit"
+icon = "icon.ppm"
+splash = "splash.ppm"
+sdk_version = "1"
+author = "PixelPal OS"
+description = "Guide a growing ethernet wire through a compact arena, collecting packets without tangling yourself."
+supports_network_lan = false
+min_os_version = "0.1.0"

@@ -1,0 +1,11 @@
+id = "grand-prix"
+name = "Grand Prix"
+version = "0.1.0"
+exec = "bin/grandprix"
+icon = "icon.ppm"
+splash = "splash.ppm"
+sdk_version = "1"
+author = "PixelPal OS"
+description = "A colorful kart-racing prototype with solo bot races, garage customization, and lane-battling powerups."
+supports_network_lan = false
+min_os_version = "0.1.0"

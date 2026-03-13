@@ -1,0 +1,13 @@
+[Unit]
+Description=PixelPal hardware status publisher
+After=network-pre.target pixelpal-preflight.service
+Requires=pixelpal-preflight.service
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/pixelpal/services/pixelpal-statusd.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=pixelpal.target

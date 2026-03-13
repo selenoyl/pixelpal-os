@@ -1,0 +1,13 @@
+[Unit]
+Description=PixelPal writable directory bootstrap
+DefaultDependencies=no
+After=local-fs.target
+Before=pixelpal-statusd.service pixelpal-launcher.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/pixelpal/services/pixelpal-preflight.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=pixelpal.target

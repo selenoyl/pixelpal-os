@@ -1,0 +1,6 @@
+[Unit]
+Description=PixelPal appliance session target
+Requires=pixelpal-preflight.service pixelpal-statusd.service pixelpal-launcher.service
+After=pixelpal-preflight.service pixelpal-statusd.service
+AllowIsolate=yes
+

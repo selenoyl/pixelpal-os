@@ -1,0 +1,4 @@
+menu_music = "menu_theme.wav"
+menu_move = "menu_move.wav"
+menu_confirm = "menu_confirm.wav"
+menu_back = "menu_back.wav"
