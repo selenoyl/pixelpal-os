@@ -1,0 +1,5 @@
+* text=auto
+
+*.ppm binary
+*.wav binary
+*.png binary

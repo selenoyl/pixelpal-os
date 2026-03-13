@@ -1,65 +1,97 @@
 # PixelPal OS
 
-PixelPal OS is a lightweight handheld gaming environment for the ROKNET Systems Pixel Pal. This repository implements the greenfield v0/v1 scaffold described in the project plan:
+PixelPal OS is a lightweight handheld gaming environment for the ROKNET Systems Pixel Pal, a custom Raspberry Pi Zero 2 W portable console. The project uses Arch Linux ARM as the base OS and adds a focused console-style layer on top: fullscreen launcher, simple runtime contract for games, hardware services, and a small set of bundled reference games.
 
-- a native launcher core
-- a small C SDK for games
-- service and systemd scaffolding for Arch Linux ARM
-- install and cache tooling
-- a sample game package
+This repository is the working source tree for the launcher, SDK, platform services, and bundled test games.
 
-The current repo is intentionally boring and practical. It favors explicit files, shell/Python helpers, and a single runtime pattern over a deep framework.
+## Project status
+
+Current direction:
+
+- Arch Linux ARM appliance layer for Raspberry Pi Zero 2 W
+- Windows build/test workflow for fast iteration during development
+- SDL-based launcher and SDL-based native games
+- single-player first, LAN multiplayer later
+
+Current bundled games:
+
+- `BotByte` - maze chase game
+- `Slinkbit` - snake-style cable game
+- `Stonefall` - falling-block puzzle game
+
+Shelved for now:
+
+- `Grand Prix` - experimental kart racer prototype, removed from the default build and staged game list until the design is revisited
 
 ## Repository layout
 
-- `launcher/` native launcher core
-- `sdk/` `libpixelpal` C runtime surface
-- `services/` boot/session/service scripts and systemd units
-- `tools/` package install and cache refresh tools
-- `sample-games/` reference game package and source
-- `themes/` placeholder for the default theme payload
-- `docs/` architecture and deployment notes
-- `packaging/` image and filesystem layout notes
+- `launcher/` - PixelPal launcher source
+- `sdk/` - `libpixelpal` runtime API for games
+- `services/` - service scripts and `systemd` units for the Linux target
+- `tools/` - install/cache helpers
+- `sample-games/` - bundled sample games and prototypes
+- `themes/` - default theme assets, palette, and menu audio layout
+- `docs/` - architecture and deployment notes
+- `cmake/` - build metadata helpers
 
-## What is implemented
+## What exists now
 
-- Manifest schema and scanner for installed games
-- Headless launcher loop for cataloging, launching, settings actions, and status reading
-- `pixelpal-run.sh` runner with log capture and session state output
-- `pixelpal-preflight.sh` writable directory bootstrap
-- `pixelpal-statusd.py` status publisher for power, Wi-Fi, and volume
-- `pixelpal-install.py` package installer
-- `pixelpal-refresh-cache.py` manifest cache builder
-- launcher menu audio support with theme-driven music and UI sound hooks
-- `libpixelpal` SDK with normalized input mapping, save/config path handling, framebuffer defaults, and clean-exit support
-- `Stonefall`, a Tetris-style falling-block game used for bring-up
+- controller-first launcher flow
+- Windows-friendly local development path
+- Linux-oriented service scaffolding for the handheld target
+- game manifest scanning and staging
+- menu music and UI sound hooks
+- save/config path handling through `libpixelpal`
+- sample game packaging format aligned with future removable media support
 
-## What still requires target hardware
+## Build
 
-- SPI display tuning and final render path choice
-- GPIO and device tree mapping for the physical controls
-- battery telemetry integration for the chosen fuel gauge or ADC
-- ALSA mixer tuning for the selected audio hardware
-- Wi-Fi helper commands matching the final Arch image
-- replacement of the temporary text-mode launcher frontend with the final SDL2 fullscreen UI
-- first-pass account binding, friends list UI, and OTA flows remain intentionally deferred
+### Windows
 
-## Build notes
+Recommended toolchain:
 
-The code targets Linux on the Raspberry Pi Zero 2 W, but the launcher core and `Stonefall` are also set up to support Windows-side development and testing. This workspace does not include a local compiler or SDL2 development environment, so the repo is scaffolded for target-side bring-up rather than compiled here.
-
-Expected target-side dependencies:
-
+- MSYS2
+- MinGW-w64 GCC
 - CMake
-- a C and C++ compiler
-- SDL2 development headers and libraries
-- Python 3 for service tooling
+- Ninja
+- SDL2
 
-The repo also includes [CMakePresets.json](C:/Users/ryanr/Documents/New%20project/CMakePresets.json) with starter Linux and Windows debug presets for local development.
+Configured preset:
+
+```sh
+cmake --preset windows-debug
+cmake --build --preset windows-debug
+```
+
+### Linux
+
+Configured preset:
+
+```sh
+cmake --preset linux-debug
+cmake --build --preset linux-debug
+```
+
+The Linux target is the real product target. Windows exists to speed up iteration on launcher and game development before deploying to the handheld hardware.
+
+## Runtime targets
+
+PixelPal OS is intended to run on:
+
+- Raspberry Pi Zero 2 W
+- Arch Linux ARM
+- small SPI display
+- D-pad
+- `A`
+- `B`
+- `Start`
+- `Select`
+
+The user-facing goal is a console appliance, not a general desktop Linux environment.
 
 ## Input model
 
-The current platform contract matches the intended handheld controls:
+Current platform controls:
 
 - D-pad
 - `A`
@@ -67,36 +99,41 @@ The current platform contract matches the intended handheld controls:
 - `Start`
 - `Select`
 
-Default keyboard mapping for development:
+Current Windows keyboard test mapping:
 
-- arrows = D-pad
-- `Z` or `C` = `A`
-- `X` = `B`
+- arrow keys = D-pad
+- `A` key = `A`
+- `B` key = `B`
 - `Enter` = `Start`
-- `Right Shift` or `Backspace` = `Select`
+- `Space` = `Select`
 - `Esc` = immediate exit
 
-The SDK also reserves a long-press `Start + Select` combo as the standard system exit path.
-
-On Windows, the launcher will fall back to directly executing the game binary when the Linux shell runner is not present, which keeps local iteration simple.
+The platform exit combo remains `Start + Select`.
 
 ## Theme audio layout
 
-The default theme now reserves `themes/default/audio/` for launcher sounds.
+The default theme audio contract is under `themes/default/audio/`:
 
-- `menu_theme.wav` for looping menu music
-- `menu_move.wav` for D-pad navigation
-- `menu_confirm.wav` for selecting or launching
-- `menu_back.wav` for cancel/back
+- `menu_theme.wav`
+- `menu_move.wav`
+- `menu_confirm.wav`
+- `menu_back.wav`
 
-The launcher reads those paths from [manifest.toml](C:/Users/ryanr/Documents/New%20project/themes/default/audio/manifest.toml), so later theme swaps only need to replace files or point the manifest at new ones.
+These are the launcher fallback audio slots for menu music and button/navigation sounds.
 
-## Deferred product hooks
+## Cartridge direction
 
-The architecture now keeps room for:
+Bundled games currently live in the OS build tree, but the packaging format is being kept aligned with future removable cartridge-style media. The long-term direction is for games to live on external storage such as SD or USB-like cartridge devices, with PixelPal scanning and launching them through the same manifest/runtime contract.
 
-- LAN multiplayer with a future friends list and device identity layer
-- a simple account model where a username can be linked to one device until wipe
-- OTA updates for limited-release hardware batches
+## Docs
 
-Those capabilities are intentionally not implemented yet in this scaffold.
+- [Architecture](docs/architecture.md)
+- [Deployment](docs/deployment.md)
+
+## GitHub notes
+
+This repo is structurally ready for GitHub. One product-level decision is still intentionally left open:
+
+- no license file has been selected yet
+
+If you publish without a license, the default is effectively all rights reserved. If you want an open-source release, the next step is choosing a license explicitly.
