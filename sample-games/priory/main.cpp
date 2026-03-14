@@ -24,12 +24,17 @@ constexpr int kScreenHeight = 224;
 constexpr int kTileSize = 16;
 constexpr Uint32 kWalkStepMs = 150;
 constexpr Uint32 kRunStepMs = 95;
+constexpr Uint32 kSwordSwingMs = 180;
+constexpr Uint32 kAttackCooldownMs = 240;
+constexpr Uint32 kMonsterMoveMs = 480;
+constexpr Uint32 kMonsterAttackMs = 860;
 constexpr Uint32 kAreaBannerMs = 2200;
 constexpr Uint32 kStatusMessageMs = 1800;
 constexpr Uint32 kWarpCooldownMs = 250;
 constexpr int kDialogHeight = 78;
 constexpr int kDialogBodyWidth = kScreenWidth - 36;
 constexpr int kDialogBodyHeight = 38;
+constexpr int kPlayerAttackDamage = 3;
 
 constexpr char kGrass = '.';
 constexpr char kFlower = ',';
@@ -57,12 +62,18 @@ constexpr char kCrate = 'x';
 constexpr char kBoard = 'b';
 constexpr char kRug = 'r';
 constexpr char kReed = 'q';
+constexpr char kFence = 'f';
+constexpr char kBench = 'p';
+constexpr char kBarrel = 'a';
+constexpr char kLaundry = 'i';
 constexpr char kCartRail = 'j';
 constexpr char kCartStep = 'm';
 constexpr char kCartWheel = 'u';
 constexpr char kHarness = 'y';
 constexpr char kMuleBack = 'n';
 constexpr char kMuleFore = 'z';
+constexpr char kChest = 't';
+constexpr char kBed = 'l';
 
 enum class Direction {
   None = 0,
@@ -82,6 +93,12 @@ enum class SpriteRole {
   Child,
   Elder,
   Watchman,
+};
+
+enum class MonsterKind {
+  Ratling = 0,
+  BogWisp,
+  DockHound,
 };
 
 struct ButtonState {
@@ -131,21 +148,73 @@ struct Npc {
   int y = 0;
   Direction facing = Direction::Down;
   bool solid = true;
+  Uint32 ambient_turn_at = 0;
+  Uint32 facing_hold_until = 0;
+  int ambient_turn_count = 0;
+};
+
+struct Monster {
+  std::string id;
+  std::string name;
+  MonsterKind kind = MonsterKind::Ratling;
+  int x = 0;
+  int y = 0;
+  Direction facing = Direction::Down;
+  int hp = 6;
+  int max_hp = 6;
+  int attack = 1;
+  bool aggressive = true;
+  Uint32 move_at = 0;
+  Uint32 attack_at = 0;
+  Uint32 hurt_until = 0;
 };
 
 struct Area {
   std::string id;
   std::string name;
   bool indoor = false;
+  bool player_tillable = false;
   std::vector<std::string> tiles;
   std::vector<Warp> warps;
   std::vector<Npc> npcs;
+  std::vector<Monster> monsters;
 };
 
 struct InventoryItemDefinition {
   std::string id;
   std::string name;
   std::string description;
+  int heal_amount = 0;
+  std::string crop_id;
+  char decor_tile = '\0';
+  bool decor_blocks = false;
+};
+
+struct CropDefinition {
+  std::string id;
+  std::string seed_item_id;
+  std::string harvest_item_id;
+  std::string name;
+  int days_to_grow = 2;
+  int yield_count = 1;
+  SDL_Color sprout{118, 166, 88, 255};
+  SDL_Color mature{156, 192, 104, 255};
+};
+
+struct CropPlot {
+  std::string area_id;
+  int x = 0;
+  int y = 0;
+  bool tilled = false;
+  std::string crop_id;
+  int stage = 0;
+};
+
+struct DecorPlacement {
+  std::string area_id;
+  int x = 0;
+  int y = 0;
+  std::string item_id;
 };
 
 struct LifePathDefinition {
@@ -180,6 +249,7 @@ enum class ShopId {
   BlackpineCloth,
   HospiceSupply,
   ScriptoriumSupply,
+  PropertyCharter,
 };
 
 struct ShopOffer {
@@ -188,6 +258,7 @@ struct ShopOffer {
   int price = 0;
   std::string item_id;
   std::string outfit_id;
+  std::string home_id;
   std::string status_message;
 };
 
@@ -224,6 +295,7 @@ struct DialogueScene {
   std::string speaker;
   std::vector<TextPageLayout> pages;
   std::size_t page_index = 0;
+  ShopId shop_after = ShopId::None;
 };
 
 struct Player {
@@ -237,6 +309,10 @@ struct Player {
   Uint32 step_duration = kWalkStepMs;
   bool moving = false;
   Direction facing = Direction::Down;
+  int hp = 12;
+  int max_hp = 12;
+  Uint32 swing_until = 0;
+  Uint32 attack_cooldown_until = 0;
 };
 
 struct QuestState {
@@ -258,6 +334,7 @@ struct ProgressState {
   bool visited_blackpine = false;
   bool visited_village_green = false;
   bool visited_quay = false;
+  int chapel_prayer_index = 0;
 };
 
 struct ProfileState {
@@ -265,11 +342,18 @@ struct ProfileState {
   int reflection_index = 0;
   int complexion_index = 0;
   int hair_index = 0;
+  int day = 1;
   int coins = 0;
   std::map<std::string, int> inventory;
+  std::map<std::string, int> stored_items;
+  std::map<std::string, int> virtues;
   std::vector<std::string> unlocked_outfits;
+  std::vector<std::string> owned_homes;
+  std::string active_home_id;
+  std::string active_item_id;
   std::string equipped_outfit_id = "lay_tunic";
   int journal_page = 0;
+  int pack_selection = 0;
   int wardrobe_selection = 0;
 };
 
@@ -282,6 +366,13 @@ struct ShopState {
   bool active = false;
   ShopId id = ShopId::None;
   int selection = 0;
+};
+
+struct ChestState {
+  bool active = false;
+  bool browse_storage = false;
+  int inventory_selection = 0;
+  int storage_selection = 0;
 };
 
 struct Note {
@@ -309,12 +400,15 @@ struct GameState {
   DialogueScene dialogue;
   QuestState quest;
   ProgressState progress;
+  std::vector<CropPlot> crop_plots;
+  std::vector<DecorPlacement> decor_placements;
   bool journal_open = false;
   bool on_title = true;
   bool has_save = false;
   int title_selection = 0;
   CreationState creation;
   ShopState shop;
+  ChestState chest;
   std::string status_message;
   Uint32 status_until = 0;
   std::string area_banner = "SAINT CATHERINE COURTYARD";
@@ -344,18 +438,67 @@ const std::vector<InventoryItemDefinition>& inventory_definitions() {
       {"work_gloves", "Work gloves", "Good leather for cold soil and rough rope."},
       {"farm_knife", "Farm knife", "A narrow knife for work before and after dawn."},
       {"seed_pouch", "Seed pouch", "A reminder that survival begins with patient labor."},
+      {"field_tools", "Field Tool Set", "Strong tools for earth, ditch, and priory ground."},
+      {"worn_needle_kit", "Worn needle kit", "Needles and thread kept in oiled cloth by careful hands."},
       {"lantern_oil", "Lantern Oil Flask", "Oil enough to keep a lamp alive through a hard evening."},
       {"wax_candles", "Wax Candles", "Chapel candles fit for altar or study desk."},
       {"barley_sack", "Barley Sack", "A coarse sack of grain for kitchens or winter stores."},
       {"iron_nails", "Iron Nails", "Useful wherever Saint Catherine still needs rebuilding."},
-      {"field_tools", "Field Tool Set", "Strong tools for earth, ditch, and priory ground."},
       {"healing_herbs", "Healing Herbs", "Dried herbs the Sisters of Saint Hilda trust in fever season."},
       {"parchment_bundle", "Parchment Bundle", "A bound packet of clean sheets for records and copying."},
       {"ink_vial", "Ink Vial", "Dark ink logged out of the scriptorium stores."},
       {"way_marker_ribbon", "Way-marker ribbon", "A faded ribbon once tied to a safer road."},
-      {"worn_needle_kit", "Worn needle kit", "Needles and thread kept in oiled cloth by careful hands."},
       {"rosary_boxwood", "Boxwood Rosary", "A sturdy rosary favored by traveling clergy."},
       {"wool_cloak_fine", "Fine Wool Cloak", "Warm wool fit for winter travel and public errands."},
+      {"rye_loaf", "Rye Loaf", "A dense market loaf still warm from Blackpine's ovens.", 4},
+      {"leek_soup", "Leek Soup", "A clay bowl of broth and softened leeks.", 5},
+      {"fish_stew", "Fish Stew", "Quay stew rich with broth, barley, and white fish.", 6},
+      {"bean_pottage", "Bean Pottage", "A sustaining pot of beans, onions, and dripping.", 5},
+      {"herb_broth", "Herb Broth", "Light broth steeped with mint and rosemary.", 3},
+      {"smoked_herring", "Smoked Herring", "Salt fish wrapped in paper for the road.", 4},
+      {"cheese_wedge", "Cheese Wedge", "A hard wedge cut for travel and work breaks.", 3},
+      {"honeyed_apple", "Honeyed Apple", "A preserved apple glossed with a little honey.", 2},
+      {"oat_cakes", "Oat Cakes", "Dry cakes that travel better than soft bread.", 3},
+      {"abbey_ale_small", "Small Abbey Ale", "A weak ale safer than foul water after a long patrol.", 2},
+      {"cabbage_seed", "Cabbage Seed Packet", "Seed wrapped in waxed linen for a heavy-headed brassica.", 0, "cabbage"},
+      {"leek_seed", "Leek Seed Packet", "Black seed for kitchen leeks and broth greens.", 0, "leek"},
+      {"bean_seed", "Bean Seed Packet", "Pole bean seed that climbs a simple stake.", 0, "bean"},
+      {"turnip_seed", "Turnip Seed Packet", "Common turnip seed for quick roots.", 0, "turnip"},
+      {"barley_seed", "Barley Seed Packet", "Barley fit for porridge, broth, and ale mashes.", 0, "barley"},
+      {"onion_seed", "Onion Set Packet", "Small onion sets wrapped for planting.", 0, "onion"},
+      {"cabbage_head", "Cabbage Head", "A tightly packed head cut fresh from good soil.", 5},
+      {"leek_bundle", "Leek Bundle", "A tied bundle of leeks with pale shafts and green tops.", 4},
+      {"bean_pod_basket", "Bean Pod Basket", "Broad beans gathered in a rush basket.", 4},
+      {"turnip_root", "Turnip Root", "A quick-growing root with a peppered sweetness.", 3},
+      {"barley_sheaf", "Barley Sheaf", "A cut sheaf that can be cooked down or milled.", 3},
+      {"onion_bulb", "Onion Bulb", "A sharp onion fit for stews and frying pans.", 3},
+      {"rush_bench_item", "Rush-Woven Bench", "A simple household bench for the cottage wall.", 0, "", kBench, true},
+      {"oak_iconshelf_item", "Oak Icon Shelf", "A narrow oak shelf for small images and candles.", 0, "", kBoard},
+      {"linen_hangings_item", "Linen Wall Hangings", "Worked linen that softens bare walls.", 0, "", kLaundry},
+      {"herb_chest_item", "Herbal Cedar Chest", "A cedar chest for linens, herbs, and winter salves.", 0, "", kChest, true},
+      {"guest_table_item", "Pilgrim Guest Table", "A broad table for bread, letters, and counsel.", 0, "", kDesk, true},
+      {"hearth_tiles_item", "Glazed Hearth Tiles", "Painted tiles to brighten the hearth edge.", 0, "", kRug},
+      {"prayer_stool_item", "Prayer Stool", "A small stool placed near an icon corner.", 0, "", kBench, true},
+      {"wax_lantern_item", "Wax Lantern", "A hanging lantern for gentler evening light.", 0, "", kCandle},
+      {"wool_tapestry_item", "Wool Tapestry", "A woven wall hanging that warms a narrow room.", 0, "", kLaundry},
+  };
+  return kDefinitions;
+}
+
+const std::vector<CropDefinition>& crop_definitions() {
+  static const std::vector<CropDefinition> kDefinitions = {
+      {"cabbage", "cabbage_seed", "cabbage_head", "Cabbage", 3, 1, SDL_Color{116, 166, 96, 255},
+       SDL_Color{154, 190, 116, 255}},
+      {"leek", "leek_seed", "leek_bundle", "Leek", 2, 1, SDL_Color{98, 154, 92, 255},
+       SDL_Color{138, 180, 104, 255}},
+      {"bean", "bean_seed", "bean_pod_basket", "Bean", 3, 2, SDL_Color{90, 148, 88, 255},
+       SDL_Color{124, 176, 96, 255}},
+      {"turnip", "turnip_seed", "turnip_root", "Turnip", 2, 1, SDL_Color{114, 160, 104, 255},
+       SDL_Color{186, 177, 124, 255}},
+      {"barley", "barley_seed", "barley_sheaf", "Barley", 3, 2, SDL_Color{122, 160, 92, 255},
+       SDL_Color{209, 188, 108, 255}},
+      {"onion", "onion_seed", "onion_bulb", "Onion", 3, 1, SDL_Color{96, 152, 96, 255},
+       SDL_Color{202, 180, 134, 255}},
   };
   return kDefinitions;
 }
@@ -471,15 +614,27 @@ const std::vector<OutfitDefinition>& outfit_definitions() {
 
 const std::vector<ShopOffer>& blackpine_shop_offers() {
   static const std::vector<ShopOffer> kOffers = {
-      {"Buy Blackpine Trim (4)", "A wool-trimmed mantle from Alisoun's cloth stall.", 4, "", "blackpine_trim",
+      {"Buy Blackpine Trim (4)", "A wool-trimmed mantle from Alisoun's cloth stall.", 4, "", "blackpine_trim", "",
        "ALISOUN FITS A NEW BLACKPINE TRIM."},
       {"Buy Way-marker Ribbon (1)", "A faded ribbon reworked into a brighter traveling trim.", 1, "way_marker_ribbon",
-       "waymarker_ribbon_outfit", "ALISOUN ADDS THE WAY-MARKER RIBBON TO YOUR KIT."},
-      {"Buy Lantern Oil (2)", "Useful for chapel light, hospice lamps, and long roads.", 2, "lantern_oil", "",
+       "waymarker_ribbon_outfit", "", "ALISOUN ADDS THE WAY-MARKER RIBBON TO YOUR KIT."},
+      {"Buy Field Tool Set (5)", "An iron hoe, mattock, and hand fork for a small holding.", 5, "field_tools", "", "",
+       "YOU PURCHASE A WORKING FIELD TOOL SET."},
+      {"Buy Cabbage Seed Packet (2)", "Reliable seed for a heavy kitchen crop.", 2, "cabbage_seed", "", "",
+       "YOU PURCHASE CABBAGE SEED."},
+      {"Buy Bean Seed Packet (2)", "Beans for broth and the poor table.", 2, "bean_seed", "", "",
+       "YOU PURCHASE BEAN SEED."},
+      {"Buy Turnip Seed Packet (1)", "Quick roots for poor soil and quick hunger.", 1, "turnip_seed", "", "",
+       "YOU PURCHASE TURNIP SEED."},
+      {"Buy Rye Loaf (2)", "Fresh bread from Margery's ovens.", 2, "rye_loaf", "", "",
+       "YOU PURCHASE A HOT RYE LOAF."},
+      {"Buy Smoked Herring (2)", "Salt fish wrapped for market travel.", 2, "smoked_herring", "", "",
+       "YOU PURCHASE SMOKED HERRING."},
+      {"Buy Lantern Oil (2)", "Useful for chapel light, hospice lamps, and long roads.", 2, "lantern_oil", "", "",
        "YOU PURCHASE LANTERN OIL."},
-      {"Buy Wax Candles (2)", "Wax candles fit for altar, desk, or winter watch.", 2, "wax_candles", "",
+      {"Buy Wax Candles (2)", "Wax candles fit for altar, desk, or winter watch.", 2, "wax_candles", "", "",
        "YOU PURCHASE WAX CANDLES."},
-      {"Buy Healing Herbs (3)", "Fresh herbs brought through Blackpine's rising market.", 3, "healing_herbs", "",
+      {"Buy Healing Herbs (3)", "Fresh herbs brought through Blackpine's rising market.", 3, "healing_herbs", "", "",
        "YOU PURCHASE HEALING HERBS."},
   };
   return kOffers;
@@ -488,27 +643,57 @@ const std::vector<ShopOffer>& blackpine_shop_offers() {
 const std::vector<ShopOffer>& hospice_shop_offers() {
   static const std::vector<ShopOffer> kOffers = {
       {"Buy Fine Wool Cloak (6)", "Warm wool fit for York roads and hospice winter rounds.", 6, "wool_cloak_fine",
-       "fine_wool_cloak_outfit", "THE SISTERS SET ASIDE A FINE WOOL CLOAK FOR YOU."},
+       "fine_wool_cloak_outfit", "", "THE SISTERS SET ASIDE A FINE WOOL CLOAK FOR YOU."},
+      {"Buy Herb Broth (2)", "Restorative broth for weakness after the road.", 2, "herb_broth", "", "",
+       "THE SISTERS POUR YOU A POT OF HERB BROTH."},
+      {"Buy Leek Soup (3)", "A warm bowl of leek soup from the sisters' kitchen.", 3, "leek_soup", "", "",
+       "YOU RECEIVE A BOWL OF LEEK SOUP FOR THE ROAD."},
       {"Buy Healing Herbs (3)", "Bundled herbs the Sisters of Saint Hilda trust in fever season.", 3, "healing_herbs",
-       "", "YOU PURCHASE HEALING HERBS FROM THE SISTERS."},
-      {"Buy Lantern Oil (2)", "Practical lamp oil for wards, road chapels, or priory halls.", 2, "lantern_oil", "",
+       "", "", "YOU PURCHASE HEALING HERBS FROM THE SISTERS."},
+      {"Buy Lantern Oil (2)", "Practical lamp oil for wards, road chapels, or priory halls.", 2, "lantern_oil", "", "",
        "YOU PURCHASE HOSPICE LANTERN OIL."},
-      {"Buy Boxwood Rosary (3)", "A sturdier rosary for long roads and longer duties.", 3, "rosary_boxwood", "",
+      {"Buy Boxwood Rosary (3)", "A sturdier rosary for long roads and longer duties.", 3, "rosary_boxwood", "", "",
        "YOU PURCHASE A BOXWOOD ROSARY."},
-  };
+    };
   return kOffers;
 }
 
 const std::vector<ShopOffer>& scriptorium_shop_offers() {
   static const std::vector<ShopOffer> kOffers = {
       {"Acquire Parchment Bundle (4)", "Logged sheets for records, sermon notes, and copied leaves.", 4,
-       "parchment_bundle", "", "YOU SECURE A PARCHMENT BUNDLE."},
-      {"Acquire Ink Vial (2)", "A measured vial drawn from the prior's restricted stores.", 2, "ink_vial", "",
+       "parchment_bundle", "", "", "YOU SECURE A PARCHMENT BUNDLE."},
+      {"Acquire Ink Vial (2)", "A measured vial drawn from the prior's restricted stores.", 2, "ink_vial", "", "",
        "YOU SECURE WRITING INK."},
-      {"Acquire Wax Candles (2)", "Extra study candles for late copying and catalog work.", 2, "wax_candles", "",
+      {"Acquire Wax Candles (2)", "Extra study candles for late copying and catalog work.", 2, "wax_candles", "", "",
        "YOU SECURE EXTRA STUDY CANDLES."},
       {"Acquire Scriptorium Apron (4)", "A careful apron for ink, wax, and logged discipline.", 4, "",
-       "scriptorium_apron", "BROTHER MARTIN RELEASES A SCRIPTORIUM APRON TO YOU."},
+       "scriptorium_apron", "", "BROTHER MARTIN RELEASES A SCRIPTORIUM APRON TO YOU."},
+  };
+  return kOffers;
+}
+
+const std::vector<ShopOffer>& property_shop_offers() {
+  static const std::vector<ShopOffer> kOffers = {
+      {"Buy Blackpine Cottage (24)", "A whitewashed cottage beyond the green with an icon corner and storage chest.", 24,
+       "", "", "blackpine-cottage", "YSABEL SEALS THE BLACKPINE COTTAGE CHARTER."},
+      {"Buy Rush-Woven Bench (6)", "A simple bench to anchor one wall of your cottage.", 6, "rush_bench_item", "", "",
+       "A RUSH-WOVEN BENCH IS SENT TO YOUR COTTAGE."},
+      {"Buy Oak Icon Shelf (8)", "A narrow oak shelf for icons, candles, and letters.", 8, "oak_iconshelf_item", "", "",
+       "YSABEL ARRANGES DELIVERY OF AN OAK ICON SHELF."},
+      {"Buy Linen Wall Hangings (7)", "Worked linen that softens bare boards and stone.", 7, "linen_hangings_item", "", "",
+       "LINEN WALL HANGINGS ARE SET ASIDE FOR YOUR HOUSEHOLD."},
+      {"Buy Herbal Cedar Chest (9)", "A cedar chest for linen, herbs, and household records.", 9, "herb_chest_item", "", "",
+       "A CEDAR CHEST IS ENTERED INTO YOUR HOUSEHOLD ACCOUNT."},
+      {"Buy Pilgrim Guest Table (10)", "A broad table for bread, alms, and counsel.", 10, "guest_table_item", "", "",
+       "A PILGRIM GUEST TABLE IS DELIVERED TO YOUR COTTAGE."},
+      {"Buy Glazed Hearth Tiles (11)", "Painted tiles to brighten your hearth edge.", 11, "hearth_tiles_item", "", "",
+       "GLAZED HEARTH TILES ARE ENTERED ON YOUR HOUSEHOLD LEDGER."},
+      {"Buy Prayer Stool (5)", "A small stool for the icon corner.", 5, "prayer_stool_item", "", "",
+       "A PRAYER STOOL IS SET BY THE WALL."},
+      {"Buy Wax Lantern (6)", "A hanging lantern for gentler evening light.", 6, "wax_lantern_item", "", "",
+       "A WAX LANTERN IS HUNG FOR YOUR HOUSEHOLD."},
+      {"Buy Wool Tapestry (9)", "A woven hanging to warm the room through damp weather.", 9, "wool_tapestry_item", "", "",
+       "A WOOL TAPESTRY IS ENTERED IN YOUR HOUSEHOLD FURNISHINGS."},
   };
   return kOffers;
 }
@@ -521,6 +706,8 @@ const std::vector<ShopOffer>& shop_offers(ShopId id) {
       return hospice_shop_offers();
     case ShopId::ScriptoriumSupply:
       return scriptorium_shop_offers();
+    case ShopId::PropertyCharter:
+      return property_shop_offers();
     default: {
       static const std::vector<ShopOffer> kEmpty;
       return kEmpty;
@@ -531,6 +718,24 @@ const std::vector<ShopOffer>& shop_offers(ShopId id) {
 const InventoryItemDefinition* inventory_definition(const std::string& id) {
   for (const auto& definition : inventory_definitions()) {
     if (definition.id == id) {
+      return &definition;
+    }
+  }
+  return nullptr;
+}
+
+const CropDefinition* crop_definition(const std::string& id) {
+  for (const auto& definition : crop_definitions()) {
+    if (definition.id == id) {
+      return &definition;
+    }
+  }
+  return nullptr;
+}
+
+const CropDefinition* crop_definition_for_seed(const std::string& item_id) {
+  for (const auto& definition : crop_definitions()) {
+    if (definition.seed_item_id == item_id) {
       return &definition;
     }
   }
@@ -549,11 +754,13 @@ const OutfitDefinition* outfit_definition(const std::string& id) {
 const char* shop_title(ShopId id) {
   switch (id) {
     case ShopId::BlackpineCloth:
-      return "BLACKPINE CLOTH STALL";
+      return "BLACKPINE MARKET STALLS";
     case ShopId::HospiceSupply:
       return "SAINT HILDA SUPPLY TABLE";
     case ShopId::ScriptoriumSupply:
       return "SCRIPTORIUM CHEST";
+    case ShopId::PropertyCharter:
+      return "PROPERTY CHARTERS";
     default:
       return "";
   }
@@ -562,11 +769,13 @@ const char* shop_title(ShopId id) {
 const char* shop_description(ShopId id) {
   switch (id) {
     case ShopId::BlackpineCloth:
-      return "ROWS OF STALLS: WAX, GRAIN, CLOTH, AND THE RISK OF BAD WEATHER.";
+      return "SEED, BREAD, TOOLS, CLOTH, AND THE SMALL COMFORTS BLACKPINE CAN AFFORD.";
     case ShopId::HospiceSupply:
       return "PRACTICAL SUPPLIES FOR NURSING, TRAVEL, AND WINTER CARE.";
     case ShopId::ScriptoriumSupply:
       return "PARCHMENT, INK, AND WAX RELEASED ONLY UNDER THE PRIOR'S RULE.";
+    case ShopId::PropertyCharter:
+      return "CHARTERS, HOUSE LOTS, AND THE FURNISHINGS THAT TURN A COTTAGE INTO A HOUSEHOLD.";
     default:
       return "";
   }
@@ -669,6 +878,19 @@ int hash_xy(int x, int y, int seed) {
   int value = x * 374761393 + y * 668265263 + seed * 982451653;
   value = (value ^ (value >> 13)) * 1274126177;
   return value ^ (value >> 16);
+}
+
+int hash_text(const std::string& text, int seed = 0) {
+  std::uint32_t value = 2166136261u ^ static_cast<std::uint32_t>(seed);
+  for (unsigned char ch : text) {
+    value ^= ch;
+    value *= 16777619u;
+  }
+  return static_cast<int>(value & 0x7fffffff);
+}
+
+int manhattan_distance(int x0, int y0, int x1, int y1) {
+  return std::abs(x0 - x1) + std::abs(y0 - y1);
 }
 
 std::string uppercase(std::string value) {
@@ -1036,7 +1258,8 @@ void render_character_with_palette(SDL_Renderer* renderer,
                                    bool walking,
                                    int x,
                                    int y,
-                                   Uint32 now) {
+                                   Uint32 now,
+                                   bool blink = false) {
   const int frame = walking ? static_cast<int>((now / 160U) % 2U) : 0;
   const int offset_y = walking ? ((now / 240U) % 2U == 0 ? 0 : 1) : 0;
   const SDL_Color shadow = {0, 0, 0, 70};
@@ -1064,12 +1287,25 @@ void render_character_with_palette(SDL_Renderer* renderer,
   } else {
     fill_rect(renderer, SDL_Rect{x + 4, y + 4 + offset_y, 8, 3}, palette.skin);
     if (facing == Direction::Down) {
-      draw_pixel(renderer, x + 6, y + 5 + offset_y, palette.outline);
-      draw_pixel(renderer, x + 9, y + 5 + offset_y, palette.outline);
+      if (blink) {
+        fill_rect(renderer, SDL_Rect{x + 5, y + 6 + offset_y, 2, 1}, palette.outline);
+        fill_rect(renderer, SDL_Rect{x + 8, y + 6 + offset_y, 2, 1}, palette.outline);
+      } else {
+        draw_pixel(renderer, x + 6, y + 5 + offset_y, palette.outline);
+        draw_pixel(renderer, x + 9, y + 5 + offset_y, palette.outline);
+      }
     } else if (facing == Direction::Left) {
-      draw_pixel(renderer, x + 5, y + 5 + offset_y, palette.outline);
+      if (blink) {
+        fill_rect(renderer, SDL_Rect{x + 4, y + 6 + offset_y, 2, 1}, palette.outline);
+      } else {
+        draw_pixel(renderer, x + 5, y + 5 + offset_y, palette.outline);
+      }
     } else if (facing == Direction::Right) {
-      draw_pixel(renderer, x + 10, y + 5 + offset_y, palette.outline);
+      if (blink) {
+        fill_rect(renderer, SDL_Rect{x + 10, y + 6 + offset_y, 2, 1}, palette.outline);
+      } else {
+        draw_pixel(renderer, x + 10, y + 5 + offset_y, palette.outline);
+      }
     }
   }
 
@@ -1112,8 +1348,119 @@ void render_character(SDL_Renderer* renderer,
                       bool walking,
                       int x,
                       int y,
-                      Uint32 now) {
-  render_character_with_palette(renderer, palette_for(role), role, facing, walking, x, y, now);
+                      Uint32 now,
+                      bool blink = false) {
+  render_character_with_palette(renderer, palette_for(role), role, facing, walking, x, y, now, blink);
+}
+
+void render_monster(SDL_Renderer* renderer, const Monster& monster, int x, int y, Uint32 now) {
+  const bool hurt = now < monster.hurt_until;
+  const SDL_Color outline = hurt ? SDL_Color{248, 236, 220, 255} : SDL_Color{35, 38, 42, 255};
+
+  if (monster.kind == MonsterKind::Ratling) {
+    const SDL_Color fur = hurt ? SDL_Color{214, 144, 130, 255} : SDL_Color{116, 92, 82, 255};
+    const SDL_Color belly = hurt ? SDL_Color{245, 201, 184, 255} : SDL_Color{189, 170, 152, 255};
+    const SDL_Color eye = SDL_Color{225, 92, 72, 255};
+    fill_rect(renderer, SDL_Rect{x + 3, y + 10, 10, 3}, SDL_Color{0, 0, 0, 70});
+    fill_rect(renderer, SDL_Rect{x + 3, y + 5, 8, 6}, outline);
+    fill_rect(renderer, SDL_Rect{x + 4, y + 6, 6, 4}, fur);
+    fill_rect(renderer, SDL_Rect{x + 7, y + 4, 5, 5}, outline);
+    fill_rect(renderer, SDL_Rect{x + 8, y + 5, 3, 3}, fur);
+    fill_rect(renderer, SDL_Rect{x + 9, y + 7, 2, 1}, belly);
+    draw_pixel(renderer, x + 10, y + 6, eye);
+    draw_pixel(renderer, x + 7, y + 5, outline);
+    draw_pixel(renderer, x + 11, y + 5, outline);
+    fill_rect(renderer, SDL_Rect{x + 5, y + 11, 2, 2}, fur);
+    fill_rect(renderer, SDL_Rect{x + 9, y + 11, 2, 2}, fur);
+    draw_pixel(renderer, x + 2, y + 9, SDL_Color{186, 152, 138, 255}, 1);
+    draw_pixel(renderer, x + 1, y + 10, SDL_Color{186, 152, 138, 255}, 1);
+    return;
+  }
+
+  if (monster.kind == MonsterKind::BogWisp) {
+    const int bob = static_cast<int>((now / 220U) % 2U);
+    const SDL_Color core = hurt ? SDL_Color{255, 212, 205, 255} : SDL_Color{178, 233, 204, 255};
+    const SDL_Color aura = hurt ? SDL_Color{244, 168, 160, 160} : SDL_Color{104, 191, 156, 130};
+    fill_circle(renderer, x + 8, y + 9 + bob, 5, aura);
+    fill_rect(renderer, SDL_Rect{x + 5, y + 5 + bob, 6, 6}, outline);
+    fill_rect(renderer, SDL_Rect{x + 6, y + 6 + bob, 4, 4}, core);
+    draw_pixel(renderer, x + 7, y + 4 + bob, outline);
+    draw_pixel(renderer, x + 5, y + 8 + bob, outline);
+    draw_pixel(renderer, x + 10, y + 8 + bob, outline);
+    draw_pixel(renderer, x + 7, y + 11 + bob, outline);
+    return;
+  }
+
+  const SDL_Color fur = hurt ? SDL_Color{222, 154, 132, 255} : SDL_Color{148, 102, 68, 255};
+  const SDL_Color mane = hurt ? SDL_Color{244, 207, 187, 255} : SDL_Color{203, 176, 130, 255};
+  const SDL_Color eye = SDL_Color{242, 226, 195, 255};
+  fill_rect(renderer, SDL_Rect{x + 3, y + 11, 10, 2}, SDL_Color{0, 0, 0, 70});
+  fill_rect(renderer, SDL_Rect{x + 4, y + 6, 8, 6}, outline);
+  fill_rect(renderer, SDL_Rect{x + 5, y + 7, 6, 4}, fur);
+  fill_rect(renderer, SDL_Rect{x + 10, y + 5, 4, 5}, outline);
+  fill_rect(renderer, SDL_Rect{x + 11, y + 6, 2, 3}, fur);
+  fill_rect(renderer, SDL_Rect{x + 6, y + 5, 3, 2}, mane);
+  draw_pixel(renderer, x + 12, y + 7, eye);
+  fill_rect(renderer, SDL_Rect{x + 5, y + 11, 2, 2}, fur);
+  fill_rect(renderer, SDL_Rect{x + 9, y + 11, 2, 2}, fur);
+  draw_pixel(renderer, x + 3, y + 9, outline);
+  draw_pixel(renderer, x + 2, y + 8, outline);
+}
+
+void render_monster_hp_bar(SDL_Renderer* renderer, const Monster& monster, int screen_x, int screen_y) {
+  if (monster.hp <= 0 || monster.max_hp <= 0) {
+    return;
+  }
+  const SDL_Rect back = {screen_x - 1, screen_y - 7, 18, 4};
+  fill_rect(renderer, back, SDL_Color{34, 34, 40, 220});
+  draw_rect(renderer, back, SDL_Color{242, 236, 220, 255});
+  const int fill_width = std::max(1, (16 * monster.hp) / std::max(1, monster.max_hp));
+  fill_rect(renderer, SDL_Rect{screen_x, screen_y - 6, fill_width, 2},
+            monster.hp * 3 > monster.max_hp ? SDL_Color{100, 187, 118, 255}
+                                            : SDL_Color{196, 113, 84, 255});
+}
+
+void render_player_hp_panel(SDL_Renderer* renderer, const GameState& state) {
+  const SDL_Rect panel = {6, 6, 74, 18};
+  fill_rect(renderer, panel, SDL_Color{248, 242, 226, 230});
+  draw_rect(renderer, panel, SDL_Color{95, 86, 67, 255});
+  draw_text(renderer, "HP", panel.x + 6, panel.y + 5, 1, SDL_Color{72, 84, 58, 255});
+  fill_rect(renderer, SDL_Rect{panel.x + 22, panel.y + 6, 46, 6}, SDL_Color{60, 62, 68, 255});
+  const int fill_width = std::clamp((44 * state.player.hp) / std::max(1, state.player.max_hp), 0, 44);
+  fill_rect(renderer, SDL_Rect{panel.x + 23, panel.y + 7, fill_width, 4},
+            state.player.hp * 2 > state.player.max_hp ? SDL_Color{100, 187, 118, 255}
+                                                      : SDL_Color{196, 113, 84, 255});
+}
+
+void render_player_swing(SDL_Renderer* renderer, const GameState& state, int screen_x, int screen_y, Uint32 now) {
+  if (now >= state.player.swing_until) {
+    return;
+  }
+  const Uint32 elapsed = kSwordSwingMs - (state.player.swing_until - now);
+  const int phase = elapsed > kSwordSwingMs / 2 ? 1 : 0;
+  SDL_Color blade = phase == 0 ? SDL_Color{240, 240, 246, 255} : SDL_Color{213, 219, 232, 255};
+  SDL_Color accent = SDL_Color{233, 199, 126, 255};
+
+  switch (state.player.facing) {
+    case Direction::Up:
+      fill_rect(renderer, SDL_Rect{screen_x + 7, screen_y - 6 + phase, 2, 8}, blade);
+      fill_rect(renderer, SDL_Rect{screen_x + 6, screen_y + 1, 4, 1}, accent);
+      break;
+    case Direction::Down:
+      fill_rect(renderer, SDL_Rect{screen_x + 7, screen_y + 11 - phase, 2, 8}, blade);
+      fill_rect(renderer, SDL_Rect{screen_x + 6, screen_y + 11, 4, 1}, accent);
+      break;
+    case Direction::Left:
+      fill_rect(renderer, SDL_Rect{screen_x - 6 + phase, screen_y + 7, 8, 2}, blade);
+      fill_rect(renderer, SDL_Rect{screen_x + 1, screen_y + 6, 1, 4}, accent);
+      break;
+    case Direction::Right:
+      fill_rect(renderer, SDL_Rect{screen_x + 11 - phase, screen_y + 7, 8, 2}, blade);
+      fill_rect(renderer, SDL_Rect{screen_x + 11, screen_y + 6, 1, 4}, accent);
+      break;
+    default:
+      break;
+  }
 }
 
 std::vector<std::string> blank_rows(int width, int height, char fill) {
@@ -1176,6 +1523,55 @@ void stamp_house(std::vector<std::string>* rows, int x, int y, int width, int he
   }
 }
 
+bool tile_in_bounds(const Area& area, int x, int y);
+char tile_at(const Area& area, int x, int y);
+
+bool is_threshold_tile(char tile) {
+  switch (tile) {
+    case kPath:
+    case kStone:
+    case kWood:
+    case kFloor:
+    case kCartStep:
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool is_facade_support_tile(char tile) {
+  switch (tile) {
+    case kRoof:
+    case kWall:
+    case kDoor:
+    case kWindow:
+    case kGlass:
+      return true;
+    default:
+      return false;
+  }
+}
+
+void finalize_outdoor_art(Area* area) {
+  if (area == nullptr || area->indoor) {
+    return;
+  }
+  for (int y = 0; y < static_cast<int>(area->tiles.size()); ++y) {
+    for (int x = 0; x < static_cast<int>(area->tiles[y].size()); ++x) {
+      if (tile_at(*area, x, y) != kDoor || !tile_in_bounds(*area, x, y + 1)) {
+        continue;
+      }
+      const char below = tile_at(*area, x, y + 1);
+      if (below == kDoor || is_threshold_tile(below)) {
+        continue;
+      }
+      if (below == kGrass || below == kFlower || below == kGarden || below == kHerb) {
+        set_tile(&area->tiles, x, y + 1, kStone);
+      }
+    }
+  }
+}
+
 Area make_house() {
   Area area;
   area.id = "house";
@@ -1229,6 +1625,7 @@ Area make_lane() {
   set_tile(&area.tiles, 20, 8, kMuleFore);
 
   area.warps.push_back({4, 7, "house", 7, 10, Direction::Down});
+  area.warps.push_back({5, 7, "house", 8, 10, Direction::Down});
   area.warps.push_back({17, 8, "square", 1, 10, Direction::Right});
   area.npcs.push_back({"driver", "CART DRIVER", SpriteRole::Merchant, 15, 8, Direction::Right, true});
   return area;
@@ -1246,21 +1643,35 @@ Area make_square() {
   fill_tiles(&area.tiles, 22, 7, 5, 6, kStone);
 
   stamp_house(&area.tiles, 2, 4, 7, 5);
+  fill_tiles(&area.tiles, 10, 13, 4, 3, kStall);
   fill_tiles(&area.tiles, 23, 13, 4, 3, kStall);
   fill_tiles(&area.tiles, 18, 13, 4, 3, kStall);
   set_tile(&area.tiles, 16, 11, kFountain);
-  set_tile(&area.tiles, 6, 9, kDoor);
   set_tile(&area.tiles, 0, 10, kPath);
   set_tile(&area.tiles, 0, 11, kPath);
+  fill_tiles(&area.tiles, 11, 3, 4, 1, kLaundry);
+  set_tile(&area.tiles, 22, 8, kBench);
+  set_tile(&area.tiles, 25, 8, kBench);
+  set_tile(&area.tiles, 10, 12, kBarrel);
+  set_tile(&area.tiles, 13, 12, kBarrel);
+  set_tile(&area.tiles, 18, 12, kBarrel);
+  set_tile(&area.tiles, 26, 12, kBarrel);
+  set_tile(&area.tiles, 3, 2, kFlower);
+  set_tile(&area.tiles, 7, 2, kFlower);
+  set_tile(&area.tiles, 2, 10, kCrate);
 
   area.warps.push_back({0, 10, "lane", 17, 9, Direction::Left});
   area.warps.push_back({0, 11, "lane", 18, 9, Direction::Left});
-  area.warps.push_back({14, 0, "priory-road", 13, 16, Direction::Up});
-  area.warps.push_back({15, 0, "priory-road", 14, 16, Direction::Up});
-  area.warps.push_back({16, 0, "priory-road", 15, 16, Direction::Up});
-  area.warps.push_back({17, 0, "priory-road", 16, 16, Direction::Up});
+  area.warps.push_back({13, 0, "priory-road", 11, 16, Direction::Up});
+  area.warps.push_back({14, 0, "priory-road", 12, 16, Direction::Up});
+  area.warps.push_back({15, 0, "priory-road", 13, 16, Direction::Up});
+  area.warps.push_back({16, 0, "priory-road", 14, 16, Direction::Up});
+  area.warps.push_back({17, 0, "priory-road", 15, 16, Direction::Up});
+  area.warps.push_back({18, 0, "priory-road", 16, 16, Direction::Up});
 
   area.npcs.push_back({"friar", "FRANCISCAN FRIAR", SpriteRole::Monk, 8, 11, Direction::Right, true});
+  area.npcs.push_back({"margery", "MARGERY BAKER", SpriteRole::Merchant, 12, 16, Direction::Up, true});
+  area.npcs.push_back({"godric", "GODRIC COBBLER", SpriteRole::Elder, 24, 7, Direction::Left, true});
   return area;
 }
 
@@ -1269,25 +1680,28 @@ Area make_priory_road() {
   area.id = "priory-road";
   area.name = "PRIORY ROAD";
   area.tiles = blank_rows(28, 18, kGrass);
-  draw_tree_border(&area.tiles, 12, 15, -1, -1);
+  draw_tree_border(&area.tiles, 11, 16, -1, -1);
 
-  fill_tiles(&area.tiles, 12, 0, 4, 18, kPath);
+  fill_tiles(&area.tiles, 11, 0, 6, 18, kPath);
   fill_tiles(&area.tiles, 10, 5, 8, 3, kStone);
   fill_tiles(&area.tiles, 3, 4, 3, 10, kTree);
   fill_tiles(&area.tiles, 22, 4, 3, 10, kTree);
-  set_tile(&area.tiles, 12, 17, kPath);
-  set_tile(&area.tiles, 13, 17, kPath);
-  set_tile(&area.tiles, 14, 17, kPath);
-  set_tile(&area.tiles, 15, 17, kPath);
   set_tile(&area.tiles, 13, 6, kCrate);
   set_tile(&area.tiles, 14, 10, kFlower);
 
+  area.warps.push_back({11, 17, "square", 13, 1, Direction::Down});
   area.warps.push_back({12, 17, "square", 14, 1, Direction::Down});
   area.warps.push_back({13, 17, "square", 15, 1, Direction::Down});
   area.warps.push_back({14, 17, "square", 16, 1, Direction::Down});
   area.warps.push_back({15, 17, "square", 17, 1, Direction::Down});
-  area.warps.push_back({13, 0, "priory-gate", 9, 11, Direction::Up});
-  area.warps.push_back({14, 0, "priory-gate", 10, 11, Direction::Up});
+  area.warps.push_back({16, 17, "square", 18, 1, Direction::Down});
+  area.warps.push_back({11, 0, "priory-gate", 7, 12, Direction::Up});
+  area.warps.push_back({12, 0, "priory-gate", 8, 12, Direction::Up});
+  area.warps.push_back({13, 0, "priory-gate", 9, 12, Direction::Up});
+  area.warps.push_back({14, 0, "priory-gate", 10, 12, Direction::Up});
+  area.warps.push_back({15, 0, "priory-gate", 11, 12, Direction::Up});
+  area.warps.push_back({16, 0, "priory-gate", 12, 12, Direction::Up});
+  area.monsters.push_back({"road-ratling", "Ratling", MonsterKind::Ratling, 8, 8, Direction::Right, 6, 6, 1, true});
   return area;
 }
 
@@ -1296,26 +1710,30 @@ Area make_priory_gate() {
   area.id = "priory-gate";
   area.name = "SAINT CATHERINE GATE";
   area.tiles = blank_rows(20, 14, kGrass);
-  draw_tree_border(&area.tiles, 9, 10, -1, -1);
+  draw_tree_border(&area.tiles, 7, 12, -1, -1);
 
   fill_tiles(&area.tiles, 7, 0, 6, 5, kRoof);
   fill_tiles(&area.tiles, 8, 5, 4, 1, kWall);
   fill_tiles(&area.tiles, 8, 6, 4, 2, kDoor);
+  fill_tiles(&area.tiles, 7, 8, 6, 6, kStone);
   fill_tiles(&area.tiles, 8, 8, 4, 6, kPath);
-  fill_tiles(&area.tiles, 7, 8, 6, 4, kStone);
-  set_tile(&area.tiles, 9, 13, kPath);
-  set_tile(&area.tiles, 10, 13, kPath);
   set_tile(&area.tiles, 8, 4, kGlass);
   set_tile(&area.tiles, 11, 4, kGlass);
 
+  area.warps.push_back({8, 13, "priory-road", 12, 1, Direction::Down});
   area.warps.push_back({9, 13, "priory-road", 13, 1, Direction::Down});
   area.warps.push_back({10, 13, "priory-road", 14, 1, Direction::Down});
+  area.warps.push_back({11, 13, "priory-road", 15, 1, Direction::Down});
   area.warps.push_back({8, 6, "priory-court", 14, 18, Direction::Up});
   area.warps.push_back({9, 6, "priory-court", 15, 18, Direction::Up});
   area.warps.push_back({10, 6, "priory-court", 16, 18, Direction::Up});
   area.warps.push_back({11, 6, "priory-court", 17, 18, Direction::Up});
+  area.warps.push_back({8, 7, "priory-court", 14, 18, Direction::Up});
+  area.warps.push_back({9, 7, "priory-court", 15, 18, Direction::Up});
+  area.warps.push_back({10, 7, "priory-court", 16, 18, Direction::Up});
+  area.warps.push_back({11, 7, "priory-court", 17, 18, Direction::Up});
 
-  area.npcs.push_back({"gate-friar", "GATE FRIAR", SpriteRole::Prior, 9, 8, Direction::Down, true});
+  area.npcs.push_back({"gate-friar", "GATE FRIAR", SpriteRole::Prior, 12, 9, Direction::Left, true});
   return area;
 }
 
@@ -1350,6 +1768,10 @@ Area make_priory_court() {
   set_tile(&area.tiles, 7, 12, kBoard);
   set_tile(&area.tiles, 4, 9, kCrate);
   set_tile(&area.tiles, 23, 9, kCrate);
+  set_tile(&area.tiles, 10, 14, kBench);
+  set_tile(&area.tiles, 18, 14, kBench);
+  fill_tiles(&area.tiles, 2, 2, 4, 1, kLaundry);
+  fill_tiles(&area.tiles, 21, 2, 4, 1, kLaundry);
   set_tile(&area.tiles, 0, 12, kPath);
   set_tile(&area.tiles, 0, 13, kPath);
 
@@ -1391,7 +1813,25 @@ Area make_bellfield() {
 
   fill_tiles(&area.tiles, 10, 12, 4, 3, kStall);
   fill_tiles(&area.tiles, 19, 12, 4, 3, kStall);
+  fill_tiles(&area.tiles, 1, 2, 8, 1, kFence);
+  fill_tiles(&area.tiles, 23, 2, 8, 1, kFence);
+  fill_tiles(&area.tiles, 1, 18, 8, 1, kFence);
+  fill_tiles(&area.tiles, 23, 18, 8, 1, kFence);
+  fill_tiles(&area.tiles, 8, 4, 4, 1, kLaundry);
+  fill_tiles(&area.tiles, 20, 4, 4, 1, kLaundry);
+  set_tile(&area.tiles, 10, 11, kBench);
+  set_tile(&area.tiles, 21, 11, kBench);
+  set_tile(&area.tiles, 9, 14, kBarrel);
+  set_tile(&area.tiles, 23, 14, kBarrel);
   fill_tiles(&area.tiles, 1, 8, 2, 3, kPath);
+  set_tile(&area.tiles, 2, 1, kFlower);
+  set_tile(&area.tiles, 5, 1, kFlower);
+  set_tile(&area.tiles, 25, 1, kFlower);
+  set_tile(&area.tiles, 28, 1, kFlower);
+  set_tile(&area.tiles, 22, 2, kBench);
+  set_tile(&area.tiles, 23, 7, kBench);
+  fill_tiles(&area.tiles, 24, 8, 3, 2, kHerb);
+  set_tile(&area.tiles, 28, 8, kCandle);
   set_tile(&area.tiles, 9, 17, kFlower);
   set_tile(&area.tiles, 22, 17, kFlower);
   set_tile(&area.tiles, 12, 17, kFlower);
@@ -1410,11 +1850,16 @@ Area make_bellfield() {
   area.warps.push_back({0, 8, "saint-hilda-hospice", 1, 7, Direction::Right});
   area.warps.push_back({0, 9, "saint-hilda-hospice", 1, 8, Direction::Right});
   area.warps.push_back({0, 10, "saint-hilda-hospice", 1, 9, Direction::Right});
+  area.warps.push_back({27, 7, "blackpine-hospital", 8, 12, Direction::Up});
 
   area.npcs.push_back({"alisoun", "ALISOUN WEAVER", SpriteRole::Merchant, 6, 9, Direction::Down, true});
   area.npcs.push_back({"oswin", "WATCHMAN OSWIN", SpriteRole::Watchman, 25, 9, Direction::Left, true});
   area.npcs.push_back({"piers", "PIERS", SpriteRole::Child, 15, 10, Direction::Up, true});
   area.npcs.push_back({"widow-joan", "WIDOW JOAN", SpriteRole::Elder, 11, 17, Direction::Up, true});
+  area.npcs.push_back({"agnes", "AGNES MILLER", SpriteRole::Merchant, 8, 17, Direction::Up, true});
+  area.npcs.push_back({"colm", "COLM DROVER", SpriteRole::Merchant, 24, 17, Direction::Left, true});
+  area.npcs.push_back({"ysabel", "YSABEL NOTARY", SpriteRole::Merchant, 20, 16, Direction::Left, true});
+  area.monsters.push_back({"green-wisp", "Bog Wisp", MonsterKind::BogWisp, 28, 17, Direction::Left, 7, 7, 2, true});
   return area;
 }
 
@@ -1432,8 +1877,11 @@ Area make_candlewharf() {
   fill_tiles(&area.tiles, 21, 3, 3, 10, kWood);
   stamp_house(&area.tiles, 4, 3, 6, 5);
   stamp_house(&area.tiles, 4, 11, 6, 5);
+  fill_tiles(&area.tiles, 10, 2, 4, 1, kLaundry);
   set_tile(&area.tiles, 24, 9, kWood);
   set_tile(&area.tiles, 24, 10, kWood);
+  set_tile(&area.tiles, 11, 12, kBarrel);
+  set_tile(&area.tiles, 15, 5, kBarrel);
   set_tile(&area.tiles, 13, 13, kCrate);
   set_tile(&area.tiles, 15, 13, kCrate);
   set_tile(&area.tiles, 17, 5, kCrate);
@@ -1448,6 +1896,8 @@ Area make_candlewharf() {
   area.npcs.push_back({"tomas", "TOMAS FERRYMAN", SpriteRole::Fisher, 22, 9, Direction::Left, true});
   area.npcs.push_back({"dock-clerk", "DOCK CLERK ELSWYTH", SpriteRole::Elder, 12, 13, Direction::Up, true});
   area.npcs.push_back({"hanse-factor", "HANSE FACTOR", SpriteRole::Merchant, 8, 9, Direction::Right, true});
+  area.npcs.push_back({"rowan", "ROWAN ROPER", SpriteRole::Fisher, 6, 16, Direction::Right, true});
+  area.monsters.push_back({"dock-hound", "Dock Hound", MonsterKind::DockHound, 14, 14, Direction::Left, 9, 9, 2, true});
   return area;
 }
 
@@ -1550,6 +2000,105 @@ Area make_hospice() {
   return area;
 }
 
+Area make_blackpine_cottage() {
+  Area area;
+  area.id = "blackpine-cottage";
+  area.name = "BLACKPINE COTTAGE";
+  area.indoor = true;
+  area.tiles = blank_rows(16, 12, kFloor);
+
+  fill_tiles(&area.tiles, 0, 0, 16, 1, kWall);
+  fill_tiles(&area.tiles, 0, 11, 16, 1, kWall);
+  fill_tiles(&area.tiles, 0, 0, 1, 12, kWall);
+  fill_tiles(&area.tiles, 15, 0, 1, 12, kWall);
+  set_tile(&area.tiles, 7, 0, kDoor);
+  set_tile(&area.tiles, 8, 0, kDoor);
+  set_tile(&area.tiles, 7, 11, kDoor);
+  set_tile(&area.tiles, 8, 11, kDoor);
+  fill_tiles(&area.tiles, 3, 3, 5, 2, kRug);
+  fill_tiles(&area.tiles, 10, 2, 3, 1, kDesk);
+  fill_tiles(&area.tiles, 10, 4, 3, 2, kShelf);
+  set_tile(&area.tiles, 3, 7, kBed);
+  set_tile(&area.tiles, 4, 7, kBed);
+  set_tile(&area.tiles, 11, 7, kChest);
+  set_tile(&area.tiles, 12, 7, kChest);
+  set_tile(&area.tiles, 4, 2, kCandle);
+  set_tile(&area.tiles, 5, 2, kBoard);
+  set_tile(&area.tiles, 10, 2, kCandle);
+  fill_tiles(&area.tiles, 9, 9, 4, 1, kRug);
+  area.warps.push_back({7, 0, "blackpine-cottage-yard", 8, 3, Direction::Down});
+  area.warps.push_back({8, 0, "blackpine-cottage-yard", 9, 3, Direction::Down});
+  area.warps.push_back({7, 11, "bellfield", 5, 16, Direction::Down});
+  area.warps.push_back({8, 11, "bellfield", 6, 16, Direction::Down});
+  return area;
+}
+
+Area make_blackpine_cottage_yard() {
+  Area area;
+  area.id = "blackpine-cottage-yard";
+  area.name = "BLACKPINE COTTAGE YARD";
+  area.player_tillable = true;
+  area.tiles = blank_rows(18, 14, kGrass);
+  draw_tree_border(&area.tiles, -1, -1, -1, -1);
+
+  fill_tiles(&area.tiles, 6, 0, 6, 1, kRoof);
+  fill_tiles(&area.tiles, 6, 1, 6, 1, kWall);
+  set_tile(&area.tiles, 8, 2, kDoor);
+  set_tile(&area.tiles, 9, 2, kDoor);
+  fill_tiles(&area.tiles, 2, 3, 13, 1, kFence);
+  fill_tiles(&area.tiles, 2, 3, 1, 8, kFence);
+  fill_tiles(&area.tiles, 14, 3, 1, 8, kFence);
+  fill_tiles(&area.tiles, 7, 3, 4, 1, kStone);
+  fill_tiles(&area.tiles, 3, 10, 4, 1, kFence);
+  fill_tiles(&area.tiles, 10, 10, 4, 1, kFence);
+  fill_tiles(&area.tiles, 4, 5, 8, 4, kGarden);
+  fill_tiles(&area.tiles, 12, 5, 1, 4, kHerb);
+  set_tile(&area.tiles, 3, 4, kBench);
+  set_tile(&area.tiles, 13, 4, kBarrel);
+  set_tile(&area.tiles, 13, 9, kCrate);
+  set_tile(&area.tiles, 5, 4, kFlower);
+  set_tile(&area.tiles, 6, 4, kFlower);
+
+  area.warps.push_back({8, 2, "blackpine-cottage", 7, 1, Direction::Down});
+  area.warps.push_back({9, 2, "blackpine-cottage", 8, 1, Direction::Down});
+  return area;
+}
+
+Area make_blackpine_hospital() {
+  Area area;
+  area.id = "blackpine-hospital";
+  area.name = "SAINT LUKE INFIRMARY";
+  area.indoor = true;
+  area.tiles = blank_rows(18, 14, kFloor);
+
+  fill_tiles(&area.tiles, 0, 0, 18, 1, kWall);
+  fill_tiles(&area.tiles, 0, 13, 18, 1, kWall);
+  fill_tiles(&area.tiles, 0, 0, 1, 14, kWall);
+  fill_tiles(&area.tiles, 17, 0, 1, 14, kWall);
+  set_tile(&area.tiles, 8, 13, kDoor);
+  set_tile(&area.tiles, 9, 13, kDoor);
+  fill_tiles(&area.tiles, 2, 2, 4, 1, kDesk);
+  fill_tiles(&area.tiles, 11, 2, 4, 1, kShelf);
+  set_tile(&area.tiles, 3, 2, kCandle);
+  set_tile(&area.tiles, 12, 2, kCandle);
+  fill_tiles(&area.tiles, 2, 4, 3, 1, kBed);
+  fill_tiles(&area.tiles, 7, 4, 3, 1, kBed);
+  fill_tiles(&area.tiles, 12, 4, 3, 1, kBed);
+  fill_tiles(&area.tiles, 2, 8, 3, 1, kBed);
+  fill_tiles(&area.tiles, 7, 8, 3, 1, kBed);
+  fill_tiles(&area.tiles, 12, 8, 3, 1, kBed);
+  fill_tiles(&area.tiles, 6, 11, 6, 1, kRug);
+  set_tile(&area.tiles, 8, 10, kCandle);
+  set_tile(&area.tiles, 14, 11, kHerb);
+  set_tile(&area.tiles, 15, 11, kHerb);
+
+  area.warps.push_back({8, 13, "bellfield", 27, 8, Direction::Down});
+  area.warps.push_back({9, 13, "bellfield", 27, 8, Direction::Down});
+  area.npcs.push_back({"sister-miriam", "SISTER MIRIAM", SpriteRole::Sister, 8, 6, Direction::Down, true});
+  area.npcs.push_back({"apothecary-eda", "APOTHECARY EDA", SpriteRole::Elder, 13, 3, Direction::Left, true});
+  return area;
+}
+
 std::vector<Area> build_world() {
   std::vector<Area> world;
   world.push_back(make_house());
@@ -1563,6 +2112,12 @@ std::vector<Area> build_world() {
   world.push_back(make_scriptorium());
   world.push_back(make_chapel());
   world.push_back(make_hospice());
+  world.push_back(make_blackpine_cottage());
+  world.push_back(make_blackpine_cottage_yard());
+  world.push_back(make_blackpine_hospital());
+  for (auto& area : world) {
+    finalize_outdoor_art(&area);
+  }
   return world;
 }
 
@@ -1588,6 +2143,42 @@ const Area* current_area(const GameState& state) {
   return area_for(state, state.current_area);
 }
 
+CropPlot* mutable_crop_plot(GameState* state, const std::string& area_id, int x, int y) {
+  for (auto& plot : state->crop_plots) {
+    if (plot.area_id == area_id && plot.x == x && plot.y == y) {
+      return &plot;
+    }
+  }
+  return nullptr;
+}
+
+const CropPlot* crop_plot_at(const GameState& state, const std::string& area_id, int x, int y) {
+  for (const auto& plot : state.crop_plots) {
+    if (plot.area_id == area_id && plot.x == x && plot.y == y) {
+      return &plot;
+    }
+  }
+  return nullptr;
+}
+
+DecorPlacement* mutable_decor_placement(GameState* state, const std::string& area_id, int x, int y) {
+  for (auto& placement : state->decor_placements) {
+    if (placement.area_id == area_id && placement.x == x && placement.y == y) {
+      return &placement;
+    }
+  }
+  return nullptr;
+}
+
+const DecorPlacement* decor_placement_at(const GameState& state, const std::string& area_id, int x, int y) {
+  for (const auto& placement : state.decor_placements) {
+    if (placement.area_id == area_id && placement.x == x && placement.y == y) {
+      return &placement;
+    }
+  }
+  return nullptr;
+}
+
 const LifePathDefinition& current_life_path(const GameState& state) {
   const auto& paths = life_path_definitions();
   const int index = std::clamp(state.profile.life_path_index, 0, static_cast<int>(paths.size()) - 1);
@@ -1606,16 +2197,155 @@ const ToneDefinition& current_hair(const GameState& state) {
   return tones[static_cast<std::size_t>(index)];
 }
 
+void set_status_message(GameState* state, const std::string& message, Uint32 now);
+
+std::map<std::string, int> default_virtues() {
+  return {
+      {"fortitude", 0},
+      {"temperance", 0},
+      {"faith", 0},
+      {"hope", 0},
+      {"charity", 0},
+      {"humility", 0},
+  };
+}
+
+std::string canonical_virtue_key(const std::string& key) {
+  const std::string lower = uppercase(key);
+  if (lower == "PRUDENCE") {
+    return "humility";
+  }
+  if (lower == "JUSTICE") {
+    return "charity";
+  }
+  std::string canonical = key;
+  std::transform(canonical.begin(), canonical.end(), canonical.begin(), [](unsigned char ch) {
+    return static_cast<char>(std::tolower(ch));
+  });
+  return canonical;
+}
+
+const char* virtue_label(const std::string& key) {
+  if (key == "fortitude") {
+    return "FORTITUDE";
+  }
+  if (key == "temperance") {
+    return "TEMPERANCE";
+  }
+  if (key == "faith") {
+    return "FAITH";
+  }
+  if (key == "hope") {
+    return "HOPE";
+  }
+  if (key == "charity") {
+    return "CHARITY";
+  }
+  if (key == "humility") {
+    return "HUMILITY";
+  }
+  return "VIRTUE";
+}
+
+int virtue_value(const GameState& state, const std::string& key) {
+  const auto canonical = canonical_virtue_key(key);
+  const auto found = state.profile.virtues.find(canonical);
+  return found == state.profile.virtues.end() ? 0 : found->second;
+}
+
+void ensure_virtues(ProfileState* profile) {
+  for (const auto& [key, value] : default_virtues()) {
+    if (profile->virtues.count(key) == 0U) {
+      profile->virtues[key] = value;
+    }
+  }
+}
+
+void add_virtue(GameState* state, const std::string& key, int delta, Uint32 now) {
+  const std::string canonical = canonical_virtue_key(key);
+  if (canonical.empty() || delta == 0) {
+    return;
+  }
+  ensure_virtues(&state->profile);
+  state->profile.virtues[canonical] += delta;
+  set_status_message(state, std::string(virtue_label(canonical)) + " +" + std::to_string(delta) + ".", now);
+}
+
+std::vector<std::string> owned_homes(const GameState& state) {
+  return state.profile.owned_homes;
+}
+
+bool owns_home(const GameState& state, const std::string& home_id) {
+  return std::find(state.profile.owned_homes.begin(), state.profile.owned_homes.end(), home_id) !=
+         state.profile.owned_homes.end();
+}
+
+void unlock_home(GameState* state, const std::string& home_id) {
+  if (home_id.empty() || owns_home(*state, home_id)) {
+    return;
+  }
+  state->profile.owned_homes.push_back(home_id);
+  if (state->profile.active_home_id.empty()) {
+    state->profile.active_home_id = home_id;
+  }
+}
+
+std::string home_name(const std::string& home_id) {
+  if (home_id == "blackpine-cottage") {
+    return "BLACKPINE COTTAGE";
+  }
+  return uppercase(home_id);
+}
+
+bool area_belongs_to_home(const std::string& area_id, const std::string& home_id) {
+  if (home_id.empty()) {
+    return false;
+  }
+  if (area_id == home_id) {
+    return true;
+  }
+  return area_id == home_id + "-yard";
+}
+
+char decor_tile_for_item(const std::string& item_id) {
+  if (const InventoryItemDefinition* definition = inventory_definition(item_id)) {
+    return definition->decor_tile;
+  }
+  return '\0';
+}
+
+bool decor_blocks_movement(const std::string& item_id) {
+  if (const InventoryItemDefinition* definition = inventory_definition(item_id)) {
+    return definition->decor_blocks;
+  }
+  return false;
+}
+
+bool tile_is_tillable_ground(char tile) {
+  return tile == kGrass || tile == kGarden || tile == kHerb || tile == kFlower;
+}
+
+std::string inventory_name(const std::string& id);
+
+std::string active_item_label(const GameState& state) {
+  if (state.profile.active_item_id.empty()) {
+    return "NONE";
+  }
+  return inventory_name(state.profile.active_item_id);
+}
+
 bool opening_square_reached(const GameState& state) {
   return state.current_area == "square" || state.current_area == "priory-road" || state.current_area == "priory-gate" ||
          state.current_area == "priory-court" || state.current_area == "chapel" || state.current_area == "scriptorium" ||
          state.current_area == "saint-hilda-hospice" || state.current_area == "bellfield" ||
-         state.current_area == "candlewharf";
+         state.current_area == "candlewharf" || state.current_area == "blackpine-cottage" ||
+         state.current_area == "blackpine-cottage-yard" || state.current_area == "blackpine-hospital";
 }
 
 bool village_green_reached(const GameState& state) {
   return state.progress.visited_village_green || state.current_area == "bellfield" ||
-         state.progress.met_prioress || state.progress.visited_quay;
+         state.current_area == "blackpine-cottage" || state.current_area == "blackpine-cottage-yard" ||
+         state.current_area == "blackpine-hospital" || state.progress.met_prioress || state.progress.visited_quay;
 }
 
 bool priory_arrival_complete(const GameState& state) {
@@ -1665,6 +2395,56 @@ std::string martin_vocation_line(const GameState& state) {
   }
 }
 
+void apply_intro_virtues(GameState* state) {
+  ensure_virtues(&state->profile);
+  switch (std::clamp(state->profile.life_path_index, 0, 4)) {
+    case 0:
+      if (state->profile.reflection_index == 0) {
+        state->profile.virtues["temperance"] += 1;
+        state->profile.virtues["humility"] += 1;
+      } else {
+        state->profile.virtues["charity"] += 1;
+        state->profile.virtues["fortitude"] += 1;
+      }
+      break;
+    case 1:
+      if (state->profile.reflection_index == 0) {
+        state->profile.virtues["temperance"] += 1;
+      } else {
+        state->profile.virtues["charity"] += 1;
+        state->profile.virtues["humility"] += 1;
+      }
+      break;
+    case 2:
+      if (state->profile.reflection_index == 0) {
+        state->profile.virtues["temperance"] += 1;
+        state->profile.virtues["charity"] += 1;
+      } else {
+        state->profile.virtues["fortitude"] += 1;
+      }
+      break;
+    case 3:
+      if (state->profile.reflection_index == 0) {
+        state->profile.virtues["charity"] += 1;
+        state->profile.virtues["temperance"] += 1;
+      } else {
+        state->profile.virtues["humility"] += 1;
+        state->profile.virtues["fortitude"] += 1;
+      }
+      break;
+    case 4:
+    default:
+      if (state->profile.reflection_index == 0) {
+        state->profile.virtues["charity"] += 1;
+        state->profile.virtues["temperance"] += 1;
+      } else {
+        state->profile.virtues["fortitude"] += 1;
+        state->profile.virtues["humility"] += 1;
+      }
+      break;
+  }
+}
+
 bool has_outfit(const GameState& state, const std::string& id) {
   return std::find(state.profile.unlocked_outfits.begin(), state.profile.unlocked_outfits.end(), id) !=
          state.profile.unlocked_outfits.end();
@@ -1684,13 +2464,74 @@ void add_inventory_item(GameState* state, const std::string& id, int count = 1) 
   state->profile.inventory[id] += count;
 }
 
+void remove_inventory_item(GameState* state, const std::string& id, int count = 1) {
+  if (id.empty() || count <= 0) {
+    return;
+  }
+  auto found = state->profile.inventory.find(id);
+  if (found == state->profile.inventory.end()) {
+    return;
+  }
+  found->second -= count;
+  if (found->second <= 0) {
+    state->profile.inventory.erase(found);
+  }
+}
+
+void add_stored_item(GameState* state, const std::string& id, int count = 1) {
+  if (id.empty() || count <= 0) {
+    return;
+  }
+  state->profile.stored_items[id] += count;
+}
+
+void remove_stored_item(GameState* state, const std::string& id, int count = 1) {
+  if (id.empty() || count <= 0) {
+    return;
+  }
+  auto found = state->profile.stored_items.find(id);
+  if (found == state->profile.stored_items.end()) {
+    return;
+  }
+  found->second -= count;
+  if (found->second <= 0) {
+    state->profile.stored_items.erase(found);
+  }
+}
+
 int inventory_count(const GameState& state, const std::string& id) {
   const auto found = state.profile.inventory.find(id);
   return found == state.profile.inventory.end() ? 0 : found->second;
 }
 
+int stored_count(const GameState& state, const std::string& id) {
+  const auto found = state.profile.stored_items.find(id);
+  return found == state.profile.stored_items.end() ? 0 : found->second;
+}
+
 std::string coin_text(int coins) {
   return std::to_string(coins) + "D";
+}
+
+bool item_is_food(const std::string& id) {
+  if (const InventoryItemDefinition* definition = inventory_definition(id)) {
+    return definition->heal_amount > 0;
+  }
+  return false;
+}
+
+bool item_is_seed(const std::string& id) {
+  if (const InventoryItemDefinition* definition = inventory_definition(id)) {
+    return !definition->crop_id.empty();
+  }
+  return false;
+}
+
+bool item_is_decor(const std::string& id) {
+  if (const InventoryItemDefinition* definition = inventory_definition(id)) {
+    return definition->decor_tile != '\0';
+  }
+  return false;
 }
 
 std::string inventory_name(const std::string& id) {
@@ -1709,6 +2550,41 @@ std::string inventory_name_list(const std::vector<std::string>& ids) {
     joined += inventory_name(ids[index]);
   }
   return joined;
+}
+
+std::vector<std::string> inventory_entry_lines(const std::map<std::string, int>& items) {
+  std::vector<std::string> lines;
+  for (const auto& definition : inventory_definitions()) {
+    const auto found = items.find(definition.id);
+    if (found == items.end() || found->second <= 0) {
+      continue;
+    }
+    lines.push_back(definition.name + " x" + std::to_string(found->second));
+  }
+  for (const auto& [id, count] : items) {
+    if (count <= 0 || inventory_definition(id) != nullptr) {
+      continue;
+    }
+    lines.push_back(uppercase(id) + " x" + std::to_string(count));
+  }
+  return lines;
+}
+
+std::vector<std::string> sorted_item_ids(const std::map<std::string, int>& items) {
+  std::vector<std::string> ids;
+  for (const auto& definition : inventory_definitions()) {
+    const auto found = items.find(definition.id);
+    if (found != items.end() && found->second > 0) {
+      ids.push_back(definition.id);
+    }
+  }
+  for (const auto& [id, count] : items) {
+    if (count <= 0 || inventory_definition(id) != nullptr) {
+      continue;
+    }
+    ids.push_back(id);
+  }
+  return ids;
 }
 
 std::string join_strings(const std::vector<std::string>& values, const char* separator) {
@@ -1757,6 +2633,55 @@ std::map<std::string, int> deserialize_inventory(const std::string& value) {
   return inventory;
 }
 
+std::string serialize_crop_plots(const std::vector<CropPlot>& plots) {
+  std::vector<std::string> entries;
+  for (const auto& plot : plots) {
+    entries.push_back(plot.area_id + ":" + std::to_string(plot.x) + ":" + std::to_string(plot.y) + ":" +
+                      (plot.tilled ? "1" : "0") + ":" + plot.crop_id + ":" + std::to_string(plot.stage));
+  }
+  return join_strings(entries, ",");
+}
+
+std::vector<CropPlot> deserialize_crop_plots(const std::string& value) {
+  std::vector<CropPlot> plots;
+  for (const auto& entry : split_string(value, ',')) {
+    const std::vector<std::string> parts = split_string(entry, ':');
+    if (parts.size() < 6) {
+      continue;
+    }
+    CropPlot plot;
+    plot.area_id = parts[0];
+    plot.x = std::atoi(parts[1].c_str());
+    plot.y = std::atoi(parts[2].c_str());
+    plot.tilled = parts[3] == "1";
+    plot.crop_id = parts[4];
+    plot.stage = std::atoi(parts[5].c_str());
+    plots.push_back(plot);
+  }
+  return plots;
+}
+
+std::string serialize_decor_placements(const std::vector<DecorPlacement>& placements) {
+  std::vector<std::string> entries;
+  for (const auto& placement : placements) {
+    entries.push_back(placement.area_id + ":" + std::to_string(placement.x) + ":" + std::to_string(placement.y) +
+                      ":" + placement.item_id);
+  }
+  return join_strings(entries, ",");
+}
+
+std::vector<DecorPlacement> deserialize_decor_placements(const std::string& value) {
+  std::vector<DecorPlacement> placements;
+  for (const auto& entry : split_string(value, ',')) {
+    const std::vector<std::string> parts = split_string(entry, ':');
+    if (parts.size() < 4) {
+      continue;
+    }
+    placements.push_back({parts[0], std::atoi(parts[1].c_str()), std::atoi(parts[2].c_str()), parts[3]});
+  }
+  return placements;
+}
+
 int area_index_for(const GameState& state, const std::string& id) {
   for (std::size_t index = 0; index < state.world.size(); ++index) {
     if (state.world[index].id == id) {
@@ -1792,6 +2717,71 @@ Npc* mutable_npc(GameState* state, const std::string& area_id, const std::string
   return nullptr;
 }
 
+bool tile_in_bounds(const Area& area, int x, int y);
+char tile_at(const Area& area, int x, int y);
+bool tile_passable(char tile);
+bool tile_occupied_by_npc(const GameState& state, const std::string& area_id, int x, int y);
+bool tile_locked_by_progress(const GameState& state, const std::string& area_id, int x, int y);
+const Warp* warp_at(const Area& area, int x, int y);
+
+Monster* mutable_monster_at(GameState* state, const std::string& area_id, int x, int y) {
+  Area* area = mutable_area(state, area_id);
+  if (area == nullptr) {
+    return nullptr;
+  }
+  for (auto& monster : area->monsters) {
+    if (monster.hp > 0 && monster.x == x && monster.y == y) {
+      return &monster;
+    }
+  }
+  return nullptr;
+}
+
+const Monster* monster_at(const GameState& state, const std::string& area_id, int x, int y) {
+  const Area* area = area_for(state, area_id);
+  if (area == nullptr) {
+    return nullptr;
+  }
+  for (const auto& monster : area->monsters) {
+    if (monster.hp > 0 && monster.x == x && monster.y == y) {
+      return &monster;
+    }
+  }
+  return nullptr;
+}
+
+bool monster_can_occupy(const GameState& state,
+                        const std::string& area_id,
+                        int x,
+                        int y,
+                        const std::string& self_id = "") {
+  const Area* area = area_for(state, area_id);
+  if (area == nullptr || !tile_in_bounds(*area, x, y)) {
+    return false;
+  }
+  if (!tile_passable(tile_at(*area, x, y)) || tile_locked_by_progress(state, area_id, x, y)) {
+    return false;
+  }
+  if (tile_occupied_by_npc(state, area_id, x, y)) {
+    return false;
+  }
+  if (warp_at(*area, x, y) != nullptr) {
+    return false;
+  }
+  for (const auto& monster : area->monsters) {
+    if (monster.hp <= 0 || monster.id == self_id) {
+      continue;
+    }
+    if (monster.x == x && monster.y == y) {
+      return false;
+    }
+  }
+  if (state.current_area == area_id && state.player.tile_x == x && state.player.tile_y == y) {
+    return false;
+  }
+  return true;
+}
+
 bool tile_in_bounds(const Area& area, int x, int y) {
   return y >= 0 && y < static_cast<int>(area.tiles.size()) &&
          x >= 0 && x < static_cast<int>(area.tiles[y].size());
@@ -1817,6 +2807,7 @@ bool tile_passable(char tile) {
     case kHerb:
     case kRug:
     case kReed:
+    case kCartStep:
       return true;
     default:
       return false;
@@ -1832,6 +2823,33 @@ bool tile_occupied_by_npc(const GameState& state, const std::string& area_id, in
     if (npc.solid && npc.x == x && npc.y == y) {
       return true;
     }
+  }
+  return false;
+}
+
+bool tile_occupied_by_monster(const GameState& state, const std::string& area_id, int x, int y) {
+  const Area* area = area_for(state, area_id);
+  if (area == nullptr) {
+    return false;
+  }
+  for (const auto& monster : area->monsters) {
+    if (monster.hp > 0 && monster.x == x && monster.y == y) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool tile_blocked_by_decor(const GameState& state, const std::string& area_id, int x, int y) {
+  if (const DecorPlacement* placement = decor_placement_at(state, area_id, x, y)) {
+    return decor_blocks_movement(placement->item_id);
+  }
+  return false;
+}
+
+bool tile_locked_by_progress(const GameState& state, const std::string& area_id, int x, int y) {
+  if (area_id == "priory-gate" && !state.progress.gate_opened && x >= 8 && x <= 11 && y >= 6 && y <= 7) {
+    return true;
   }
   return false;
 }
@@ -1873,14 +2891,24 @@ void save_game(const GameState& state) {
   output << "x=" << state.player.tile_x << "\n";
   output << "y=" << state.player.tile_y << "\n";
   output << "facing=" << static_cast<int>(state.player.facing) << "\n";
+  output << "hp=" << state.player.hp << "\n";
+  output << "max_hp=" << state.player.max_hp << "\n";
   output << "life_path=" << state.profile.life_path_index << "\n";
   output << "reflection=" << state.profile.reflection_index << "\n";
   output << "complexion=" << state.profile.complexion_index << "\n";
   output << "hair=" << state.profile.hair_index << "\n";
+  output << "day=" << state.profile.day << "\n";
   output << "coins=" << state.profile.coins << "\n";
   output << "equipped_outfit=" << state.profile.equipped_outfit_id << "\n";
   output << "unlocked_outfits=" << join_strings(state.profile.unlocked_outfits, ",") << "\n";
   output << "inventory=" << serialize_inventory(state.profile.inventory) << "\n";
+  output << "stored=" << serialize_inventory(state.profile.stored_items) << "\n";
+  output << "virtues=" << serialize_inventory(state.profile.virtues) << "\n";
+  output << "owned_homes=" << join_strings(state.profile.owned_homes, ",") << "\n";
+  output << "active_home=" << state.profile.active_home_id << "\n";
+  output << "active_item=" << state.profile.active_item_id << "\n";
+  output << "crops=" << serialize_crop_plots(state.crop_plots) << "\n";
+  output << "decor=" << serialize_decor_placements(state.decor_placements) << "\n";
   output << "started=" << (state.quest.started ? 1 : 0) << "\n";
   output << "wax=" << (state.quest.wax ? 1 : 0) << "\n";
   output << "leaf=" << (state.quest.leaf ? 1 : 0) << "\n";
@@ -1896,6 +2924,7 @@ void save_game(const GameState& state) {
   output << "visited_blackpine=" << (state.progress.visited_blackpine ? 1 : 0) << "\n";
   output << "visited_village_green=" << (state.progress.visited_village_green ? 1 : 0) << "\n";
   output << "visited_quay=" << (state.progress.visited_quay ? 1 : 0) << "\n";
+  output << "chapel_prayer_index=" << state.progress.chapel_prayer_index << "\n";
 }
 
 bool load_game(GameState* state) {
@@ -1942,10 +2971,15 @@ bool load_game(GameState* state) {
   state->player.target_y = y;
   state->player.moving = false;
   state->player.facing = static_cast<Direction>(std::atoi(values["facing"].c_str()));
+  state->player.max_hp =
+      values.count("max_hp") != 0U ? std::max(1, std::atoi(values["max_hp"].c_str())) : 12;
+  state->player.hp = values.count("hp") != 0U ? std::clamp(std::atoi(values["hp"].c_str()), 1, state->player.max_hp)
+                                               : state->player.max_hp;
   state->profile.life_path_index = std::atoi(values["life_path"].c_str());
   state->profile.reflection_index = std::atoi(values["reflection"].c_str());
   state->profile.complexion_index = std::atoi(values["complexion"].c_str());
   state->profile.hair_index = std::atoi(values["hair"].c_str());
+  state->profile.day = values.count("day") != 0U ? std::max(1, std::atoi(values["day"].c_str())) : 1;
   state->profile.coins = std::atoi(values["coins"].c_str());
   state->profile.equipped_outfit_id =
       values.count("equipped_outfit") != 0U ? values["equipped_outfit"] : current_life_path(*state).starter_outfit_id;
@@ -1960,6 +2994,19 @@ bool load_game(GameState* state) {
   }
   state->profile.inventory =
       values.count("inventory") != 0U ? deserialize_inventory(values["inventory"]) : std::map<std::string, int>{};
+  state->profile.stored_items =
+      values.count("stored") != 0U ? deserialize_inventory(values["stored"]) : std::map<std::string, int>{};
+  state->profile.virtues =
+      values.count("virtues") != 0U ? deserialize_inventory(values["virtues"]) : default_virtues();
+  ensure_virtues(&state->profile);
+  state->profile.owned_homes =
+      values.count("owned_homes") != 0U ? split_string(values["owned_homes"], ',') : std::vector<std::string>{};
+  state->profile.active_home_id = values.count("active_home") != 0U ? values["active_home"] : "";
+  state->profile.active_item_id = values.count("active_item") != 0U ? values["active_item"] : "";
+  state->crop_plots =
+      values.count("crops") != 0U ? deserialize_crop_plots(values["crops"]) : std::vector<CropPlot>{};
+  state->decor_placements =
+      values.count("decor") != 0U ? deserialize_decor_placements(values["decor"]) : std::vector<DecorPlacement>{};
   state->quest.started = values["started"] == "1";
   state->quest.wax = values["wax"] == "1";
   state->quest.leaf = (values.count("leaf") != 0U && values["leaf"] == "1") ||
@@ -1977,19 +3024,32 @@ bool load_game(GameState* state) {
   state->progress.visited_village_green =
       values.count("visited_village_green") != 0U && values["visited_village_green"] == "1";
   state->progress.visited_quay = values.count("visited_quay") != 0U && values["visited_quay"] == "1";
+  state->progress.chapel_prayer_index =
+      values.count("chapel_prayer_index") != 0U ? std::atoi(values["chapel_prayer_index"].c_str()) : 0;
   if (state->current_area == "square" || state->current_area == "bellfield") {
     state->progress.visited_blackpine = true;
   }
-  if (state->current_area == "bellfield" || state->progress.met_prioress || state->progress.visited_quay) {
+  if (state->current_area == "bellfield" || state->current_area == "blackpine-cottage" ||
+      state->current_area == "blackpine-cottage-yard" || state->current_area == "blackpine-hospital" ||
+      state->progress.met_prioress || state->progress.visited_quay) {
     state->progress.visited_village_green = true;
+  }
+  if (!state->profile.active_home_id.empty() && !owns_home(*state, state->profile.active_home_id)) {
+    unlock_home(state, state->profile.active_home_id);
   }
   return true;
 }
 
-void start_dialogue(GameState* state, const std::string& speaker, std::vector<std::string> pages) {
+void open_shop(GameState* state, ShopId id);
+
+void start_dialogue(GameState* state,
+                    const std::string& speaker,
+                    std::vector<std::string> pages,
+                    ShopId shop_after = ShopId::None) {
   state->dialogue.active = true;
   state->dialogue.speaker = speaker;
   state->dialogue.pages.clear();
+  state->dialogue.shop_after = shop_after;
   const SDL_Rect dialogue_body_box = {0, 0, kDialogBodyWidth, kDialogBodyHeight};
   const TextBoxOptions dialogue_body_options = {
       1, 1, true, true, 0, 2, TextAlign::Left, TextVerticalAlign::Top};
@@ -2009,7 +3069,7 @@ std::string objective_text(const GameState& state) {
       return "LEAVE YOUR FATHER'S HOUSE AND STEP INTO BLACKPINE.";
     }
     if (state.current_area == "lane") {
-      return "FOLLOW THE LANE INTO BLACKPINE MARKET SQUARE.";
+      return "CLIMB INTO THE DRIVER'S CART FOR BLACKPINE MARKET SQUARE.";
     }
     if (state.current_area == "square") {
       return state.progress.friar_blessing ? "TAKE THE PRIORY ROAD TOWARD SAINT CATHERINE."
@@ -2032,9 +3092,20 @@ std::string objective_text(const GameState& state) {
 }
 
 void open_shop(GameState* state, ShopId id) {
+  state->chest = {};
   state->shop.active = true;
   state->shop.id = id;
   state->shop.selection = 0;
+}
+
+bool shop_offer_owned(const GameState& state, const ShopOffer& offer) {
+  if (!offer.outfit_id.empty() && has_outfit(state, offer.outfit_id)) {
+    return true;
+  }
+  if (!offer.home_id.empty() && owns_home(state, offer.home_id)) {
+    return true;
+  }
+  return false;
 }
 
 bool purchase_shop_offer(GameState* state, Uint32 now) {
@@ -2042,10 +3113,17 @@ bool purchase_shop_offer(GameState* state, Uint32 now) {
   if (offers.empty()) {
     return false;
   }
+  state->shop.selection = std::clamp(state->shop.selection, 0, static_cast<int>(offers.size()) - 1);
   const ShopOffer& offer = offers[static_cast<std::size_t>(state->shop.selection)];
   if (!offer.outfit_id.empty() && has_outfit(*state, offer.outfit_id)) {
     state->profile.equipped_outfit_id = offer.outfit_id;
     set_status_message(state, "YOU EQUIP A KNOWN GARMENT.", now);
+    save_game(*state);
+    return true;
+  }
+  if (!offer.home_id.empty() && owns_home(*state, offer.home_id)) {
+    state->profile.active_home_id = offer.home_id;
+    set_status_message(state, home_name(offer.home_id) + " IS NOW YOUR ACTIVE HOME.", now);
     save_game(*state);
     return true;
   }
@@ -2062,23 +3140,203 @@ bool purchase_shop_offer(GameState* state, Uint32 now) {
     unlock_outfit(state, offer.outfit_id);
     state->profile.equipped_outfit_id = offer.outfit_id;
   }
+  if (!offer.home_id.empty()) {
+    unlock_home(state, offer.home_id);
+    state->profile.active_home_id = offer.home_id;
+  }
   set_status_message(state, offer.status_message, now);
   save_game(*state);
   return true;
 }
 
 std::vector<std::string> inventory_lines(const GameState& state) {
-  std::vector<std::string> lines;
-  for (const auto& definition : inventory_definitions()) {
-    const int count = inventory_count(state, definition.id);
-    if (count > 0) {
-      lines.push_back(definition.name + " X" + std::to_string(count));
-    }
-  }
+  std::vector<std::string> lines = inventory_entry_lines(state.profile.inventory);
   if (lines.empty()) {
-    lines.push_back("NO STORED ITEMS YET.");
+    lines.push_back("NO PACK ITEMS YET.");
   }
   return lines;
+}
+
+std::vector<std::string> stored_lines(const GameState& state) {
+  std::vector<std::string> lines = inventory_entry_lines(state.profile.stored_items);
+  if (lines.empty()) {
+    lines.push_back("CHEST IS EMPTY.");
+  }
+  return lines;
+}
+
+void clear_active_item_if_missing(GameState* state);
+
+bool store_selected_item(GameState* state, Uint32 now) {
+  const std::vector<std::string> ids = sorted_item_ids(state->profile.inventory);
+  if (ids.empty()) {
+    set_status_message(state, "NOTHING TO STORE.", now);
+    return false;
+  }
+  state->chest.inventory_selection =
+      std::clamp(state->chest.inventory_selection, 0, static_cast<int>(ids.size()) - 1);
+  const std::string& item_id = ids[static_cast<std::size_t>(state->chest.inventory_selection)];
+  remove_inventory_item(state, item_id);
+  add_stored_item(state, item_id);
+  clear_active_item_if_missing(state);
+  set_status_message(state, inventory_name(item_id) + " STORED.", now);
+  save_game(*state);
+  return true;
+}
+
+bool retrieve_selected_item(GameState* state, Uint32 now) {
+  const std::vector<std::string> ids = sorted_item_ids(state->profile.stored_items);
+  if (ids.empty()) {
+    set_status_message(state, "CHEST IS EMPTY.", now);
+    return false;
+  }
+  state->chest.storage_selection =
+      std::clamp(state->chest.storage_selection, 0, static_cast<int>(ids.size()) - 1);
+  const std::string& item_id = ids[static_cast<std::size_t>(state->chest.storage_selection)];
+  remove_stored_item(state, item_id);
+  add_inventory_item(state, item_id);
+  set_status_message(state, inventory_name(item_id) + " RETRIEVED.", now);
+  save_game(*state);
+  return true;
+}
+
+void clear_active_item_if_missing(GameState* state) {
+  if (!state->profile.active_item_id.empty() && inventory_count(*state, state->profile.active_item_id) <= 0) {
+    state->profile.active_item_id.clear();
+  }
+}
+
+bool use_selected_pack_item(GameState* state, Uint32 now) {
+  const std::vector<std::string> ids = sorted_item_ids(state->profile.inventory);
+  if (ids.empty()) {
+    set_status_message(state, "YOUR PACK IS EMPTY.", now);
+    return false;
+  }
+
+  state->profile.pack_selection = std::clamp(state->profile.pack_selection, 0, static_cast<int>(ids.size()) - 1);
+  const std::string& item_id = ids[static_cast<std::size_t>(state->profile.pack_selection)];
+  const InventoryItemDefinition* definition = inventory_definition(item_id);
+  if (definition == nullptr) {
+    return false;
+  }
+
+  if (definition->heal_amount > 0) {
+    if (state->player.hp >= state->player.max_hp) {
+      set_status_message(state, "YOU DO NOT NEED FOOD JUST NOW.", now);
+      return false;
+    }
+    remove_inventory_item(state, item_id);
+    state->player.hp = std::min(state->player.max_hp, state->player.hp + definition->heal_amount);
+    state->profile.active_item_id.clear();
+    set_status_message(state, "YOU EAT " + uppercase(definition->name) + " AND RECOVER.", now);
+    save_game(*state);
+    return true;
+  }
+
+  if (!definition->crop_id.empty() || definition->decor_tile != '\0') {
+    state->profile.active_item_id = item_id;
+    set_status_message(state, uppercase(definition->name) + " IS NOW ACTIVE.", now);
+    save_game(*state);
+    return true;
+  }
+
+  set_status_message(state, "THIS ITEM IS CARRIED, NOT USED HERE.", now);
+  return false;
+}
+
+void advance_farm_day(GameState* state) {
+  for (auto& plot : state->crop_plots) {
+    if (!plot.tilled || plot.crop_id.empty()) {
+      continue;
+    }
+    if (const CropDefinition* crop = crop_definition(plot.crop_id)) {
+      plot.stage = std::min(crop->days_to_grow, plot.stage + 1);
+    }
+  }
+}
+
+void advance_day(GameState* state, Uint32 now) {
+  ++state->profile.day;
+  advance_farm_day(state);
+  state->player.hp = std::min(state->player.max_hp, state->player.hp + 3);
+  set_status_message(state, "DAY " + std::to_string(state->profile.day) + " AT PRIME.", now);
+  save_game(*state);
+}
+
+bool place_active_decor(GameState* state, const Area& area, int x, int y, Uint32 now) {
+  if (state->profile.active_item_id.empty() || !item_is_decor(state->profile.active_item_id) ||
+      !area_belongs_to_home(area.id, state->profile.active_home_id)) {
+    return false;
+  }
+  if (decor_placement_at(*state, area.id, x, y) != nullptr || warp_at(area, x, y) != nullptr ||
+      tile_occupied_by_npc(*state, area.id, x, y) || tile_occupied_by_monster(*state, area.id, x, y)) {
+    return false;
+  }
+  const char tile = tile_at(area, x, y);
+  if (area.indoor) {
+    if (!(tile == kFloor || tile == kRug || tile == kWood || tile == kStone)) {
+      return false;
+    }
+  } else {
+    if (!(tile == kGrass || tile == kStone || tile == kPath || tile == kWood || tile == kFlower)) {
+      return false;
+    }
+    if (crop_plot_at(*state, area.id, x, y) != nullptr) {
+      return false;
+    }
+  }
+  state->decor_placements.push_back({area.id, x, y, state->profile.active_item_id});
+  remove_inventory_item(state, state->profile.active_item_id);
+  set_status_message(state, uppercase(inventory_name(state->profile.active_item_id)) + " PLACED.", now);
+  clear_active_item_if_missing(state);
+  save_game(*state);
+  return true;
+}
+
+bool farm_tile_action(GameState* state, const Area& area, int x, int y, Uint32 now) {
+  if (!area.player_tillable || !tile_is_tillable_ground(tile_at(area, x, y))) {
+    return false;
+  }
+  CropPlot* plot = mutable_crop_plot(state, area.id, x, y);
+  if (plot != nullptr && plot->tilled && !plot->crop_id.empty()) {
+    const CropDefinition* crop = crop_definition(plot->crop_id);
+    if (crop != nullptr && plot->stage >= crop->days_to_grow) {
+      add_inventory_item(state, crop->harvest_item_id, crop->yield_count);
+      set_status_message(state, "YOU HARVEST " + uppercase(crop->name) + ".", now);
+      plot->crop_id.clear();
+      plot->stage = 0;
+      save_game(*state);
+      return true;
+    }
+  }
+
+  if (plot == nullptr) {
+    if (inventory_count(*state, "field_tools") <= 0) {
+      set_status_message(state, "YOU NEED FIELD TOOLS TO BREAK THE GROUND.", now);
+      return false;
+    }
+    state->crop_plots.push_back({area.id, x, y, true, "", 0});
+    set_status_message(state, "YOU TILL A NEW PLOT.", now);
+    save_game(*state);
+    return true;
+  }
+
+  if (plot->tilled && plot->crop_id.empty()) {
+    const CropDefinition* crop = crop_definition_for_seed(state->profile.active_item_id);
+    if (crop == nullptr || inventory_count(*state, state->profile.active_item_id) <= 0) {
+      set_status_message(state, "SET A SEED PACK ACTIVE TO SOW THIS PLOT.", now);
+      return false;
+    }
+    plot->crop_id = crop->id;
+    plot->stage = 0;
+    remove_inventory_item(state, state->profile.active_item_id);
+    set_status_message(state, "YOU SOW " + uppercase(crop->name) + ".", now);
+    clear_active_item_if_missing(state);
+    save_game(*state);
+    return true;
+  }
+
+  return false;
 }
 
 std::string equipped_outfit_name(const GameState& state) {
@@ -2099,6 +3357,10 @@ void start_new_game(GameState* state, Uint32 now) {
   state->player.target_y = 8;
   state->player.moving = false;
   state->player.facing = Direction::Down;
+  state->player.max_hp = 12;
+  state->player.hp = state->player.max_hp;
+  state->player.swing_until = 0;
+  state->player.attack_cooldown_until = 0;
   state->quest = {};
   state->progress = {};
   state->dialogue = {};
@@ -2106,11 +3368,18 @@ void start_new_game(GameState* state, Uint32 now) {
   state->on_title = false;
   state->creation.active = false;
   state->shop = {};
+  state->chest = {};
   state->title_selection = 0;
   state->bells_until = 0;
   state->profile.coins = (life_path.coin_min + life_path.coin_max) / 2;
+  state->profile.day = 1;
   state->profile.inventory.clear();
+  state->profile.stored_items.clear();
+  state->profile.virtues = default_virtues();
   state->profile.unlocked_outfits.clear();
+  state->profile.owned_homes.clear();
+  state->profile.active_home_id.clear();
+  state->profile.active_item_id.clear();
   for (const auto& item_id : life_path.starter_items) {
     add_inventory_item(state, item_id);
   }
@@ -2119,8 +3388,13 @@ void start_new_game(GameState* state, Uint32 now) {
   }
   unlock_outfit(state, life_path.starter_outfit_id);
   state->profile.equipped_outfit_id = life_path.starter_outfit_id;
+  apply_intro_virtues(state);
+  state->profile.virtues["faith"] += 1;
   state->profile.journal_page = 0;
+  state->profile.pack_selection = 0;
   state->profile.wardrobe_selection = 0;
+  state->crop_plots.clear();
+  state->decor_placements.clear();
   set_area_banner(state, "YOUR FATHER'S HOUSE", now);
   start_dialogue(
       state,
@@ -2153,7 +3427,8 @@ void apply_warp(GameState* state, const Warp& warp, Uint32 now) {
   if (state->current_area == "square" || state->current_area == "bellfield") {
     state->progress.visited_blackpine = true;
   }
-  if (state->current_area == "bellfield") {
+  if (state->current_area == "bellfield" || state->current_area == "blackpine-cottage" ||
+      state->current_area == "blackpine-cottage-yard" || state->current_area == "blackpine-hospital") {
     state->progress.visited_village_green = true;
   } else if (state->current_area == "candlewharf") {
     state->progress.visited_quay = true;
@@ -2189,7 +3464,16 @@ bool can_occupy(const GameState& state, const std::string& area_id, int x, int y
   if (!tile_passable(tile_at(*area, x, y))) {
     return false;
   }
+  if (tile_locked_by_progress(state, area_id, x, y)) {
+    return false;
+  }
   if (tile_occupied_by_npc(state, area_id, x, y)) {
+    return false;
+  }
+  if (tile_occupied_by_monster(state, area_id, x, y)) {
+    return false;
+  }
+  if (tile_blocked_by_decor(state, area_id, x, y)) {
     return false;
   }
   return true;
@@ -2244,6 +3528,99 @@ void begin_player_step(GameState* state, Direction direction, Uint32 now, bool r
   state->player.moving = true;
 }
 
+struct RespawnPoint {
+  const char* area_id = "house";
+  int x = 8;
+  int y = 8;
+  const char* message = "YOU WITHDRAW TO YOUR FATHER'S HOUSE.";
+};
+
+RespawnPoint respawn_point_for(const GameState& state) {
+  if (state.current_area == "priory-court" || state.current_area == "priory-gate" || state.current_area == "chapel" ||
+      state.current_area == "scriptorium" || state.current_area == "saint-hilda-hospice") {
+    return {"saint-hilda-hospice", 8, 10, "YOU WAKE UNDER SAINT HILDA'S CARE."};
+  }
+  return {"blackpine-hospital", 8, 11, "YOU WAKE IN SAINT LUKE'S INFIRMARY."};
+}
+
+void return_player_to_safety(GameState* state, Uint32 now) {
+  state->player.hp = state->player.max_hp;
+  state->player.swing_until = 0;
+  state->player.attack_cooldown_until = 0;
+
+  const RespawnPoint respawn = respawn_point_for(*state);
+  state->current_area = respawn.area_id;
+  state->player.tile_x = respawn.x;
+  state->player.tile_y = respawn.y;
+  set_status_message(state, respawn.message, now);
+
+  state->player.start_x = state->player.tile_x;
+  state->player.start_y = state->player.tile_y;
+  state->player.target_x = state->player.tile_x;
+  state->player.target_y = state->player.tile_y;
+  state->player.facing = Direction::Down;
+  state->player.moving = false;
+  if (const Area* area = current_area(*state)) {
+    set_area_banner(state, area->name, now);
+  }
+  save_game(*state);
+}
+
+int player_attack_damage(const GameState& state) {
+  int bonus = 0;
+  if (inventory_count(state, "worn_arming_dagger") > 0) {
+    bonus = 1;
+  }
+  return kPlayerAttackDamage + bonus;
+}
+
+int monster_coin_reward(const Monster& monster) {
+  switch (monster.kind) {
+    case MonsterKind::Ratling:
+      return 3;
+    case MonsterKind::BogWisp:
+      return 4;
+    case MonsterKind::DockHound:
+      return 5;
+    default:
+      return 2;
+  }
+}
+
+bool player_attack(GameState* state, Uint32 now) {
+  if (state->player.moving || now < state->player.attack_cooldown_until) {
+    return false;
+  }
+
+  state->player.swing_until = now + kSwordSwingMs;
+  state->player.attack_cooldown_until = now + kAttackCooldownMs;
+
+  int dx = 0;
+  int dy = 0;
+  direction_delta(state->player.facing, &dx, &dy);
+  const int target_x = state->player.tile_x + dx;
+  const int target_y = state->player.tile_y + dy;
+  Monster* monster = mutable_monster_at(state, state->current_area, target_x, target_y);
+  if (monster == nullptr) {
+    set_status_message(state, "YOU CUT THE AIR.", now);
+    return false;
+  }
+
+  monster->hurt_until = now + 180U;
+  monster->move_at = now + 220U;
+  monster->attack_at = now + 420U;
+  monster->hp = std::max(0, monster->hp - player_attack_damage(*state));
+  if (monster->hp == 0) {
+    const int reward = monster_coin_reward(*monster);
+    state->profile.coins += reward;
+    set_status_message(state, uppercase(monster->name) + " FALLS. +" + std::to_string(reward) + "D.", now);
+  } else {
+    set_status_message(state, "YOU STRIKE " + uppercase(monster->name) + ".", now);
+  }
+  save_game(*state);
+  return true;
+}
+
 void update_player(GameState* state, const ButtonState& buttons, Uint32 now) {
   if (state->player.moving) {
     if (now - state->player.step_started_at >= state->player.step_duration) {
@@ -2258,19 +3635,153 @@ void update_player(GameState* state, const ButtonState& buttons, Uint32 now) {
   }
 
   if (buttons.up) {
-    begin_player_step(state, Direction::Up, now, buttons.b);
+    begin_player_step(state, Direction::Up, now, buttons.select);
   } else if (buttons.down) {
-    begin_player_step(state, Direction::Down, now, buttons.b);
+    begin_player_step(state, Direction::Down, now, buttons.select);
   } else if (buttons.left) {
-    begin_player_step(state, Direction::Left, now, buttons.b);
+    begin_player_step(state, Direction::Left, now, buttons.select);
   } else if (buttons.right) {
-    begin_player_step(state, Direction::Right, now, buttons.b);
+    begin_player_step(state, Direction::Right, now, buttons.select);
   }
 }
 
-void turn_npc_toward(GameState* state, const std::string& area_id, const std::string& npc_id, Direction facing) {
+void update_monsters(GameState* state, Uint32 now) {
+  Area* area = mutable_area(state, state->current_area);
+  if (area == nullptr) {
+    return;
+  }
+
+  for (auto& monster : area->monsters) {
+    if (monster.hp <= 0) {
+      continue;
+    }
+
+    const int distance = manhattan_distance(monster.x, monster.y, state->player.tile_x, state->player.tile_y);
+    if (distance <= 1) {
+      if (now >= monster.attack_at) {
+        monster.attack_at = now + kMonsterAttackMs;
+        state->player.hp = std::max(0, state->player.hp - std::max(1, monster.attack));
+        monster.hurt_until = std::max(monster.hurt_until, now + 120U);
+        set_status_message(state, uppercase(monster.name) + " HITS FOR " + std::to_string(monster.attack) + ".", now);
+        if (state->player.hp <= 0) {
+          return_player_to_safety(state, now);
+          return;
+        }
+        save_game(*state);
+      }
+      continue;
+    }
+
+    if (!monster.aggressive || distance > 6 || now < monster.move_at) {
+      continue;
+    }
+
+    std::array<Direction, 4> choices = {Direction::Up, Direction::Down, Direction::Left, Direction::Right};
+    if (std::abs(state->player.tile_x - monster.x) >= std::abs(state->player.tile_y - monster.y)) {
+      choices = {
+          state->player.tile_x < monster.x ? Direction::Left : Direction::Right,
+          state->player.tile_y < monster.y ? Direction::Up : Direction::Down,
+          state->player.tile_y < monster.y ? Direction::Down : Direction::Up,
+          state->player.tile_x < monster.x ? Direction::Right : Direction::Left,
+      };
+    } else {
+      choices = {
+          state->player.tile_y < monster.y ? Direction::Up : Direction::Down,
+          state->player.tile_x < monster.x ? Direction::Left : Direction::Right,
+          state->player.tile_x < monster.x ? Direction::Right : Direction::Left,
+          state->player.tile_y < monster.y ? Direction::Down : Direction::Up,
+      };
+    }
+
+    bool moved = false;
+    for (Direction direction : choices) {
+      int dx = 0;
+      int dy = 0;
+      direction_delta(direction, &dx, &dy);
+      const int next_x = monster.x + dx;
+      const int next_y = monster.y + dy;
+      if (!monster_can_occupy(*state, state->current_area, next_x, next_y, monster.id)) {
+        continue;
+      }
+      monster.x = next_x;
+      monster.y = next_y;
+      monster.facing = direction;
+      moved = true;
+      break;
+    }
+
+    if (!moved) {
+      monster.facing = opposite(monster.facing);
+    }
+    monster.move_at = now + kMonsterMoveMs;
+  }
+}
+
+bool npc_is_blinking(const Npc& npc, Uint32 now) {
+  const int seed = hash_text(npc.id, npc.x * 31 + npc.y * 17);
+  const Uint32 cycle = 4400U + static_cast<Uint32>(seed % 1700);
+  const Uint32 phase = now % cycle;
+  return phase >= cycle - 140U || (phase >= cycle - 320U && phase < cycle - 280U);
+}
+
+Direction ambient_npc_direction(const Npc& npc) {
+  const int seed = hash_text(npc.id, npc.ambient_turn_count + npc.x * 13 + npc.y * 7);
+  switch (seed % 4) {
+    case 0:
+      return Direction::Down;
+    case 1:
+      return Direction::Left;
+    case 2:
+      return Direction::Right;
+    default:
+      return Direction::Up;
+  }
+}
+
+void update_npcs(GameState* state, Uint32 now) {
+  Area* area = mutable_area(state, state->current_area);
+  if (area == nullptr) {
+    return;
+  }
+
+  for (auto& npc : area->npcs) {
+    if (npc.facing_hold_until != 0 && now < npc.facing_hold_until) {
+      continue;
+    }
+    if (std::abs(state->player.tile_x - npc.x) + std::abs(state->player.tile_y - npc.y) <= 1) {
+      continue;
+    }
+    if (npc.ambient_turn_at == 0) {
+      npc.ambient_turn_at = now + 3200U + static_cast<Uint32>(hash_text(npc.id, npc.x * 19 + npc.y * 23) % 2600);
+      continue;
+    }
+    if (now < npc.ambient_turn_at) {
+      continue;
+    }
+
+    ++npc.ambient_turn_count;
+    const int pause_roll = hash_text(npc.id, npc.ambient_turn_count * 37 + 11);
+    if (pause_roll % 5 != 0) {
+      Direction next = ambient_npc_direction(npc);
+      if (next == npc.facing) {
+        next = static_cast<Direction>((static_cast<int>(next) % 4) + 1);
+      }
+      npc.facing = next;
+    }
+    npc.ambient_turn_at = now + 3400U +
+                          static_cast<Uint32>(hash_text(npc.id, npc.ambient_turn_count * 53 + 29) % 3100);
+  }
+}
+
+void turn_npc_toward(GameState* state,
+                     const std::string& area_id,
+                     const std::string& npc_id,
+                     Direction facing,
+                     Uint32 now) {
   if (Npc* npc = mutable_npc(state, area_id, npc_id)) {
     npc->facing = facing;
+    npc->facing_hold_until = now + 2400U;
+    npc->ambient_turn_at = npc->facing_hold_until + 2200U;
   }
 }
 
@@ -2279,6 +3790,7 @@ std::vector<std::string> dialogue_for_npc(GameState* state, const Npc& npc, Uint
     if (!state->progress.father_counsel) {
       state->progress.father_counsel = true;
       state->profile.coins += 5;
+      add_virtue(state, "prudence", 1, now);
       save_game(*state);
       set_status_message(state, "FATHER'S POUCH: +5 COIN.", now);
       return {
@@ -2295,6 +3807,8 @@ std::vector<std::string> dialogue_for_npc(GameState* state, const Npc& npc, Uint
   if (npc.id == "mother") {
     if (!state->progress.mother_blessing) {
       state->progress.mother_blessing = true;
+      state->profile.virtues["faith"] += 1;
+      state->profile.virtues["hope"] += 1;
       save_game(*state);
       return {
           "YOUR MOTHER TURNS FROM THE HEARTH AND HOLDS YOU FOR A MOMENT.",
@@ -2310,6 +3824,8 @@ std::vector<std::string> dialogue_for_npc(GameState* state, const Npc& npc, Uint
   if (npc.id == "friar") {
     if (!state->progress.friar_blessing) {
       state->progress.friar_blessing = true;
+      state->profile.virtues["charity"] += 1;
+      state->profile.virtues["fortitude"] += 1;
       save_game(*state);
       return {
           "THE FRANCISCAN GREETS YOU: 'PEACE TO YOU. YOU TRAVEL?'",
@@ -2325,7 +3841,8 @@ std::vector<std::string> dialogue_for_npc(GameState* state, const Npc& npc, Uint
   if (npc.id == "driver") {
     return {
         "'MOST MEN CHOOSE THEIR ROAD. OTHERS WAKE TO FIND THE ROAD HAS CHOSEN THEM,' THE DRIVER SAYS.",
-        "'SAINT CATHERINE? THEN CLIMB UP. I LEAVE WITH OR WITHOUT YOU.'",
+        "THE MULE STAMPS AND THE CART CREAKS AGAINST ITS LEATHER STRAPS.",
+        "'SAINT CATHERINE? THEN CLIMB INTO THE CART. BRUNE KNOWS THE TURN BETTER THAN I DO.'",
     };
   }
 
@@ -2379,6 +3896,16 @@ std::vector<std::string> dialogue_for_npc(GameState* state, const Npc& npc, Uint
   if (npc.id == "brother-martin") {
     const bool first_meet = !state->progress.met_martin;
     state->progress.met_martin = true;
+    if (first_meet) {
+      if (state->profile.life_path_index == 1) {
+        state->profile.virtues["humility"] += 1;
+      } else if (state->profile.life_path_index == 2) {
+        state->profile.virtues["fortitude"] += 1;
+        state->profile.virtues["temperance"] += 1;
+      } else {
+        state->profile.virtues["charity"] += 1;
+      }
+    }
     save_game(*state);
     if (first_meet) {
       return {
@@ -2441,11 +3968,48 @@ std::vector<std::string> dialogue_for_npc(GameState* state, const Npc& npc, Uint
     };
   }
 
+  if (npc.id == "ysabel") {
+    return {
+        "YSABEL SPREADS CHARTERS, RENT NOTES, AND GUILD SEALS OVER A PORTABLE DESK.",
+        owns_home(*state, "blackpine-cottage")
+            ? "YOUR BLACKPINE COTTAGE IS ENTERED CLEANLY IN THE GUILD ROLL. IF YOU KEEP IT WELL, IT WILL KEEP YOUR RECORDS WELL."
+            : "A BLACKPINE COTTAGE STANDS JUST BEYOND THE GREEN: WHITEWASHED WALLS, AN ICON CORNER, AND A CHEST FOR HOUSEHOLD RECORDS.",
+    };
+  }
+
+  if (npc.id == "margery") {
+    return {
+        "MARGERY DUSTS FLOUR FROM HER APRON. 'THE OVENS START BEFORE PRIME IF BLACKPINE MEANS TO EAT.'",
+        "SHE NODS TOWARD THE PRIORY ROAD. 'MONKS, CARTERS, AND HOSPICE SISTERS ALL TAKE THEIR LOAVES HOT, SO I PLAN FOR ALL OF THEM.'",
+    };
+  }
+
+  if (npc.id == "godric") {
+    return {
+        "GODRIC HOLDS UP A HALF-SOLED BOOT. 'BLACKPINE MUD, QUAY TAR, AND PRIORY STONE EACH EAT LEATHER DIFFERENTLY.'",
+        "HE GRUNTS. 'A TOWN FEELS HEALTHY WHEN MEN REPAIR THINGS BEFORE THEY FAIL.'",
+    };
+  }
+
   if (npc.id == "oswin") {
     return {
         priory_arrival_complete(*state)
             ? "ALL CLEAR FROM THE GREEN TO RAVENSCAR. A GOOD BELL MAKES THE WATCH SHORTER."
             : "MILL ROAD IS TENSE. TOO MANY MEN ARE COUNTING SHORTAGES AND TOO FEW ARE COUNTING COST.",
+    };
+  }
+
+  if (npc.id == "agnes") {
+    return {
+        "AGNES MILLER TAPS A SACK WITH HER FOOT. 'FLOUR, BRAN, AND TOLL DUST. THAT IS HALF OF BLACKPINE'S ARGUMENT IN ONE BUNDLE.'",
+        "SHE LOWERS HER VOICE. 'SAINT HILDA GETS THE CLEANEST MEAL. THE HOSPICE HAS NO USE FOR PRIDE.'",
+    };
+  }
+
+  if (npc.id == "colm") {
+    return {
+        "COLM KEEPS ONE HAND ON A DROVER'S STAFF. 'WOOL MOVES SLOWER THAN MEN THINK AND FASTER THAN TAXMEN ADMIT.'",
+        "HE GLANCES TOWARD THE QUAY ROAD. 'KEEP THE ROAD OPEN AND THE GREEN STAYS CIVIL.'",
     };
   }
 
@@ -2478,6 +4042,13 @@ std::vector<std::string> dialogue_for_npc(GameState* state, const Npc& npc, Uint
     };
   }
 
+  if (npc.id == "rowan") {
+    return {
+        "ROWAN PULLS COIL AFTER COIL OF LINE STRAIGHT. 'SALT EATS ROPE, WIND TESTS IT, AND MEN BLAME THE ROPER LAST.'",
+        "HE JERKS HIS CHIN TOWARD RAVENSCAR'S WATER. 'IF THE TIDE TURNS HARD, EVERY GOOD KNOT IN TOWN EARNS ITS KEEP.'",
+    };
+  }
+
   if (npc.id == "sister-beatrice") {
     return {
         priory_arrival_complete(*state)
@@ -2486,7 +4057,40 @@ std::vector<std::string> dialogue_for_npc(GameState* state, const Npc& npc, Uint
     };
   }
 
+  if (npc.id == "sister-miriam") {
+    return {
+        "SISTER MIRIAM FOLDS A CLEAN BANDAGE. 'BLACKPINE KEEPS A SMALL INFIRMARY NOW. CART WRECKS, FEVERS, AND QUAY CUTS MAKE IT NECESSARY.'",
+        "SHE GLANCES AT THE COTS. 'REST HERE IF YOU MUST, BUT EAT WELL BEFORE YOU LET YOUR STRENGTH RUN OUT AGAIN.'",
+    };
+  }
+
+  if (npc.id == "apothecary-eda") {
+    return {
+        "EDA LAYS OUT HERB PACKETS, BROTH JARS, AND SALVES IN TIDY RANKS.",
+        "SHE TAPS A seed pouch with one finger. 'BLACKPINE'S sick recover faster when their yards stay planted and their chests stay orderly.'",
+    };
+  }
+
   return {"PEACE BE WITH YOU."};
+}
+
+ShopId shop_after_npc_dialogue(const GameState& state, const std::string& npc_id) {
+  if (npc_id == "alisoun") {
+    return ShopId::BlackpineCloth;
+  }
+  if (npc_id == "brother-martin" && state.progress.met_martin) {
+    return ShopId::ScriptoriumSupply;
+  }
+  if (npc_id == "hospice-prioress" && state.progress.met_prioress) {
+    return ShopId::HospiceSupply;
+  }
+  if (npc_id == "ysabel") {
+    return ShopId::PropertyCharter;
+  }
+  if (npc_id == "apothecary-eda") {
+    return ShopId::HospiceSupply;
+  }
+  return ShopId::None;
 }
 
 void trigger_bell(AudioState* audio, float frequency, int duration_ms) {
@@ -2509,9 +4113,9 @@ void interact(GameState* state, Uint32 now, AudioState* audio) {
   for (const auto& npc : area->npcs) {
     if (npc.x == target_x && npc.y == target_y) {
       const ProgressState previous_progress = state->progress;
-      turn_npc_toward(state, state->current_area, npc.id, opposite(state->player.facing));
+      turn_npc_toward(state, state->current_area, npc.id, opposite(state->player.facing), now);
       const std::vector<std::string> pages = dialogue_for_npc(state, npc, now);
-      start_dialogue(state, npc.name, pages);
+      start_dialogue(state, npc.name, pages, shop_after_npc_dialogue(*state, npc.id));
       if ((npc.id == "gate-friar" && !previous_progress.gate_opened && state->progress.gate_opened) ||
           (npc.id == "hospice-prioress" && !previous_progress.met_prioress && state->progress.met_prioress) ||
           (npc.id == "brother-martin" && !previous_progress.met_martin && state->progress.met_martin) ||
@@ -2523,6 +4127,44 @@ void interact(GameState* state, Uint32 now, AudioState* audio) {
       }
       return;
     }
+  }
+
+  if (state->current_area == "blackpine-cottage" && tile_at(*area, target_x, target_y) == kBed) {
+    advance_day(state, now);
+    return;
+  }
+
+  if (state->current_area == "bellfield" && target_x == 5 && target_y == 15) {
+    if (owns_home(*state, "blackpine-cottage")) {
+      apply_warp(state, Warp{5, 15, "blackpine-cottage", 7, 10, Direction::Up}, now);
+    } else {
+      start_dialogue(
+          state,
+          "COTTAGE",
+          {"A MODEST COTTAGE STANDS JUST OFF THE GREEN. YSABEL THE NOTARY HOLDS ITS CHARTER."});
+    }
+    return;
+  }
+
+  if (area_belongs_to_home(area->id, state->profile.active_home_id) &&
+      (tile_at(*area, target_x, target_y) == kChest || decor_placement_at(*state, area->id, target_x, target_y) != nullptr)) {
+    const DecorPlacement* placement = decor_placement_at(*state, area->id, target_x, target_y);
+    if (placement == nullptr || decor_tile_for_item(placement->item_id) == kChest || tile_at(*area, target_x, target_y) == kChest) {
+      state->shop = {};
+      state->chest.active = true;
+      state->chest.browse_storage = false;
+      state->chest.inventory_selection = 0;
+      state->chest.storage_selection = 0;
+      return;
+    }
+  }
+
+  if (farm_tile_action(state, *area, target_x, target_y, now)) {
+    return;
+  }
+
+  if (place_active_decor(state, *area, target_x, target_y, now)) {
+    return;
   }
 
   if (state->current_area == "bellfield" && target_x == 16 && target_y == 8) {
@@ -2607,12 +4249,36 @@ void interact(GameState* state, Uint32 now, AudioState* audio) {
   }
 
   if (state->current_area == "chapel" && target_x == 6 && target_y == 2) {
-    start_dialogue(
-        state,
-        "ALTAR",
-        {
-            "THE ALTAR CLOTH IS REPAIRED IN THREE PLACES. POVERTY, YES, BUT NOT NEGLECT.",
-        });
+    if (state->progress.chapel_prayer_index == 0) {
+      state->progress.chapel_prayer_index = 1;
+      state->profile.virtues["humility"] += 1;
+      state->profile.virtues["faith"] += 1;
+      save_game(*state);
+      start_dialogue(state, "CHAPEL RAIL",
+                     {"YOU ASK FOR CLEAR SIGHT BEFORE CLEAR SPEECH.", "HUMILITY +1. FAITH +1."});
+    } else if (state->progress.chapel_prayer_index == 1) {
+      state->progress.chapel_prayer_index = 2;
+      state->profile.virtues["fortitude"] += 1;
+      state->profile.virtues["faith"] += 1;
+      save_game(*state);
+      start_dialogue(state, "CHAPEL RAIL",
+                     {"YOU ASK FOR COURAGE WITHOUT HARDNESS.", "FORTITUDE +1. FAITH +1."});
+    } else if (state->progress.chapel_prayer_index == 2) {
+      state->progress.chapel_prayer_index = 3;
+      state->profile.virtues["temperance"] += 1;
+      state->profile.virtues["charity"] += 1;
+      state->profile.virtues["faith"] += 1;
+      save_game(*state);
+      start_dialogue(state, "CHAPEL RAIL",
+                     {"YOU ASK FOR PATIENCE WHEN OFFENDED.", "TEMPERANCE +1. CHARITY +1. FAITH +1."});
+    } else {
+      start_dialogue(
+          state,
+          "ALTAR",
+          {
+              "THE ALTAR CLOTH IS REPAIRED IN THREE PLACES. POVERTY, YES, BUT NOT NEGLECT.",
+          });
+    }
     return;
   }
 
@@ -2639,7 +4305,11 @@ void advance_dialogue(GameState* state) {
   if (state->dialogue.page_index + 1 < state->dialogue.pages.size()) {
     ++state->dialogue.page_index;
   } else {
+    const ShopId shop_after = state->dialogue.shop_after;
     state->dialogue = {};
+    if (shop_after != ShopId::None) {
+      open_shop(state, shop_after);
+    }
   }
 }
 
@@ -2848,6 +4518,20 @@ void draw_tile(SDL_Renderer* renderer, char tile, int tile_x, int tile_y, int sc
       fill_rect(renderer, SDL_Rect{screen_x + 11, screen_y + 1, 1, 14}, SDL_Color{154, 118, 72, 255});
       fill_rect(renderer, SDL_Rect{screen_x + 1, screen_y + 7, 14, 1}, SDL_Color{154, 118, 72, 255});
       break;
+    case kChest:
+      fill_rect(renderer, rect, SDL_Color{88, 58, 37, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 2, screen_y + 4, 12, 9}, SDL_Color{140, 95, 55, 255});
+      draw_rect(renderer, SDL_Rect{screen_x + 2, screen_y + 4, 12, 9}, SDL_Color{64, 42, 28, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 2, screen_y + 7, 12, 1}, SDL_Color{198, 160, 98, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 7, screen_y + 7, 2, 4}, SDL_Color{223, 193, 124, 255});
+      break;
+    case kBed:
+      fill_rect(renderer, rect, SDL_Color{132, 96, 74, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 1, screen_y + 2, 14, 11}, SDL_Color{210, 198, 186, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 2, screen_y + 6, 12, 7}, SDL_Color{142, 92, 88, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 2, screen_y + 3, 5, 3}, SDL_Color{239, 232, 220, 255});
+      draw_rect(renderer, SDL_Rect{screen_x + 1, screen_y + 2, 14, 11}, SDL_Color{96, 68, 50, 255});
+      break;
     case kBoard:
       draw_tile(renderer, kStone, tile_x, tile_y, screen_x, screen_y, now);
       fill_rect(renderer, SDL_Rect{screen_x + 4, screen_y + 2, 8, 9}, SDL_Color{124, 84, 54, 255});
@@ -2867,6 +4551,43 @@ void draw_tile(SDL_Renderer* renderer, char tile, int tile_x, int tile_y, int sc
       fill_rect(renderer, SDL_Rect{screen_x + 6, screen_y + 3, 1, 9}, SDL_Color{209, 215, 127, 255});
       fill_rect(renderer, SDL_Rect{screen_x + 10, screen_y + 6, 1, 7}, SDL_Color{184, 197, 102, 255});
       fill_rect(renderer, SDL_Rect{screen_x + 12, screen_y + 4, 1, 8}, SDL_Color{209, 215, 127, 255});
+      break;
+    case kFence:
+      draw_tile(renderer, kGrass, tile_x, tile_y, screen_x, screen_y, now);
+      fill_rect(renderer, SDL_Rect{screen_x + 2, screen_y + 3, 2, 11}, SDL_Color{112, 78, 49, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 12, screen_y + 3, 2, 11}, SDL_Color{112, 78, 49, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 1, screen_y + 6, 14, 2}, SDL_Color{163, 121, 77, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 1, screen_y + 10, 14, 2}, SDL_Color{147, 108, 69, 255});
+      draw_pixel(renderer, screen_x + 3, screen_y + 4, SDL_Color{197, 161, 109, 255});
+      draw_pixel(renderer, screen_x + 12, screen_y + 4, SDL_Color{197, 161, 109, 255});
+      break;
+    case kBench:
+      draw_tile(renderer, kStone, tile_x, tile_y, screen_x, screen_y, now);
+      fill_rect(renderer, SDL_Rect{screen_x + 3, screen_y + 5, 10, 2}, SDL_Color{154, 112, 70, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 2, screen_y + 8, 12, 2}, SDL_Color{123, 84, 51, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 4, screen_y + 10, 2, 4}, SDL_Color{83, 56, 36, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 10, screen_y + 10, 2, 4}, SDL_Color{83, 56, 36, 255});
+      draw_pixel(renderer, screen_x + 6, screen_y + 6, SDL_Color{194, 156, 102, 255});
+      break;
+    case kBarrel:
+      draw_tile(renderer, kStone, tile_x, tile_y, screen_x, screen_y, now);
+      fill_rect(renderer, SDL_Rect{screen_x + 4, screen_y + 3, 8, 10}, SDL_Color{138, 96, 56, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 5, screen_y + 2, 6, 2}, SDL_Color{174, 130, 83, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 5, screen_y + 12, 6, 2}, SDL_Color{109, 73, 43, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 4, screen_y + 5, 8, 1}, SDL_Color{94, 64, 39, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 4, screen_y + 9, 8, 1}, SDL_Color{94, 64, 39, 255});
+      draw_pixel(renderer, screen_x + 8, screen_y + 7, SDL_Color{208, 171, 114, 255});
+      break;
+    case kLaundry:
+      draw_tile(renderer, kGrass, tile_x, tile_y, screen_x, screen_y, now);
+      fill_rect(renderer, SDL_Rect{screen_x + 1, screen_y + 2, 1, 12}, SDL_Color{118, 84, 50, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 14, screen_y + 2, 1, 12}, SDL_Color{118, 84, 50, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 1, screen_y + 3, 14, 1}, SDL_Color{87, 59, 38, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 3, screen_y + 4, 4, 6}, SDL_Color{228, 216, 190, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 8, screen_y + 4, 4, 5}, SDL_Color{151, 95, 80, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 12, screen_y + 4, 2, 6}, SDL_Color{83, 121, 143, 255});
+      draw_pixel(renderer, screen_x + 4, screen_y + 5, SDL_Color{246, 236, 211, 255});
+      draw_pixel(renderer, screen_x + 9, screen_y + 5, SDL_Color{193, 132, 111, 255});
       break;
     case kCartRail:
       draw_tile(renderer, kPath, tile_x, tile_y, screen_x, screen_y, now);
@@ -2952,6 +4673,87 @@ void draw_objective_tokens(SDL_Renderer* renderer, const GameState& state) {
   draw_token(214, "Q", state.progress.visited_quay);
 }
 
+void render_crop_plot(SDL_Renderer* renderer, const CropPlot& plot, int screen_x, int screen_y) {
+  fill_rect(renderer, SDL_Rect{screen_x + 1, screen_y + 2, 14, 12}, SDL_Color{120, 86, 56, 255});
+  fill_rect(renderer, SDL_Rect{screen_x + 1, screen_y + 12, 14, 2}, SDL_Color{92, 62, 40, 255});
+  fill_rect(renderer, SDL_Rect{screen_x + 3, screen_y + 4, 1, 8}, SDL_Color{146, 108, 76, 255});
+  fill_rect(renderer, SDL_Rect{screen_x + 7, screen_y + 4, 1, 8}, SDL_Color{146, 108, 76, 255});
+  fill_rect(renderer, SDL_Rect{screen_x + 11, screen_y + 4, 1, 8}, SDL_Color{146, 108, 76, 255});
+
+  if (plot.crop_id.empty()) {
+    return;
+  }
+
+  const CropDefinition* crop = crop_definition(plot.crop_id);
+  if (crop == nullptr) {
+    return;
+  }
+
+  const bool mature = plot.stage >= crop->days_to_grow;
+  const SDL_Color leaf = mature ? crop->mature : crop->sprout;
+  const SDL_Color stem = SDL_Color{74, 116, 53, 255};
+  const int plant_top = mature ? 4 : 7;
+  fill_rect(renderer, SDL_Rect{screen_x + 4, screen_y + plant_top, 1, 6}, stem);
+  fill_rect(renderer, SDL_Rect{screen_x + 8, screen_y + plant_top - 1, 1, 7}, stem);
+  fill_rect(renderer, SDL_Rect{screen_x + 12, screen_y + plant_top, 1, 6}, stem);
+  fill_rect(renderer, SDL_Rect{screen_x + 3, screen_y + plant_top + 2, 3, 2}, leaf);
+  fill_rect(renderer, SDL_Rect{screen_x + 7, screen_y + plant_top + 1, 3, 2}, leaf);
+  fill_rect(renderer, SDL_Rect{screen_x + 11, screen_y + plant_top + 2, 3, 2}, leaf);
+  if (mature) {
+    draw_pixel(renderer, screen_x + 4, screen_y + plant_top, SDL_Color{226, 222, 142, 255});
+    draw_pixel(renderer, screen_x + 8, screen_y + plant_top - 1, SDL_Color{226, 222, 142, 255});
+    draw_pixel(renderer, screen_x + 12, screen_y + plant_top, SDL_Color{226, 222, 142, 255});
+  }
+}
+
+void render_decor_overlay(SDL_Renderer* renderer, char tile, int screen_x, int screen_y, Uint32 now) {
+  switch (tile) {
+    case kBench:
+      fill_rect(renderer, SDL_Rect{screen_x + 3, screen_y + 7, 10, 2}, SDL_Color{154, 112, 70, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 2, screen_y + 10, 12, 2}, SDL_Color{123, 84, 51, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 4, screen_y + 12, 2, 2}, SDL_Color{83, 56, 36, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 10, screen_y + 12, 2, 2}, SDL_Color{83, 56, 36, 255});
+      break;
+    case kBoard:
+      fill_rect(renderer, SDL_Rect{screen_x + 4, screen_y + 2, 8, 8}, SDL_Color{124, 84, 54, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 5, screen_y + 3, 6, 6}, SDL_Color{218, 202, 164, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 5, screen_y + 5, 6, 1}, SDL_Color{141, 121, 95, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 7, screen_y + 10, 2, 4}, SDL_Color{88, 60, 41, 255});
+      break;
+    case kLaundry:
+      fill_rect(renderer, SDL_Rect{screen_x + 2, screen_y + 2, 12, 2}, SDL_Color{122, 89, 64, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 2, screen_y + 4, 4, 7}, SDL_Color{221, 214, 198, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 7, screen_y + 4, 3, 6}, SDL_Color{181, 112, 94, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 11, screen_y + 4, 3, 7}, SDL_Color{196, 177, 118, 255});
+      break;
+    case kChest:
+      fill_rect(renderer, SDL_Rect{screen_x + 2, screen_y + 6, 12, 7}, SDL_Color{140, 95, 55, 255});
+      draw_rect(renderer, SDL_Rect{screen_x + 2, screen_y + 6, 12, 7}, SDL_Color{64, 42, 28, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 2, screen_y + 8, 12, 1}, SDL_Color{198, 160, 98, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 7, screen_y + 8, 2, 3}, SDL_Color{223, 193, 124, 255});
+      break;
+    case kDesk:
+      fill_rect(renderer, SDL_Rect{screen_x + 2, screen_y + 5, 12, 7}, SDL_Color{153, 108, 65, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 2, screen_y + 5, 12, 1}, SDL_Color{182, 139, 92, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 3, screen_y + 12, 1, 2}, SDL_Color{95, 68, 42, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 12, screen_y + 12, 1, 2}, SDL_Color{95, 68, 42, 255});
+      break;
+    case kRug:
+      fill_rect(renderer, SDL_Rect{screen_x + 2, screen_y + 2, 12, 12}, SDL_Color{169, 88, 69, 255});
+      draw_rect(renderer, SDL_Rect{screen_x + 2, screen_y + 2, 12, 12}, SDL_Color{217, 191, 126, 255});
+      draw_pixel(renderer, screen_x + 7, screen_y + 7, SDL_Color{232, 211, 149, 255}, 2);
+      break;
+    case kCandle:
+      fill_rect(renderer, SDL_Rect{screen_x + 5, screen_y + 6, 6, 6}, SDL_Color{104, 82, 66, 255});
+      fill_rect(renderer, SDL_Rect{screen_x + 7, screen_y + 3, 2, 6}, SDL_Color{242, 229, 202, 255});
+      draw_pixel(renderer, screen_x + 7, screen_y + 1 + static_cast<int>((now / 140U) % 2U), SDL_Color{255, 209, 96, 255}, 2);
+      break;
+    default:
+      draw_tile(renderer, tile, 0, 0, screen_x, screen_y, now);
+      break;
+  }
+}
+
 void render_world(SDL_Renderer* renderer, const GameState& state, Uint32 now) {
   const Area* area = current_area(state);
   if (area == nullptr) {
@@ -2985,6 +4787,24 @@ void render_world(SDL_Renderer* renderer, const GameState& state, Uint32 now) {
     }
   }
 
+  for (const auto& plot : state.crop_plots) {
+    if (plot.area_id != area->id || !plot.tilled) {
+      continue;
+    }
+    render_crop_plot(renderer, plot, plot.x * kTileSize - camera_x, plot.y * kTileSize - camera_y);
+  }
+
+  for (const auto& placement : state.decor_placements) {
+    if (placement.area_id != area->id) {
+      continue;
+    }
+    const char tile = decor_tile_for_item(placement.item_id);
+    if (tile == '\0') {
+      continue;
+    }
+    render_decor_overlay(renderer, tile, placement.x * kTileSize - camera_x, placement.y * kTileSize - camera_y, now);
+  }
+
   struct Drawable {
     int sort_y;
     int screen_x;
@@ -2992,30 +4812,67 @@ void render_world(SDL_Renderer* renderer, const GameState& state, Uint32 now) {
     SpriteRole role;
     Direction facing;
     bool walking;
+    bool blink = false;
     bool is_player = false;
+    const Monster* monster = nullptr;
   };
 
   std::vector<Drawable> drawables;
   for (const auto& npc : area->npcs) {
-    drawables.push_back(
-        {npc.y * kTileSize, npc.x * kTileSize - camera_x, npc.y * kTileSize - camera_y, npc.role, npc.facing, false,
-         false});
+    drawables.push_back({npc.y * kTileSize,
+                         npc.x * kTileSize - camera_x,
+                         npc.y * kTileSize - camera_y,
+                         npc.role,
+                         npc.facing,
+                         false,
+                         npc_is_blinking(npc, now),
+                         false,
+                         nullptr});
+  }
+  for (const auto& monster : area->monsters) {
+    if (monster.hp <= 0) {
+      continue;
+    }
+    drawables.push_back({monster.y * kTileSize,
+                         monster.x * kTileSize - camera_x,
+                         monster.y * kTileSize - camera_y,
+                         SpriteRole::Player,
+                         monster.facing,
+                         false,
+                         false,
+                         false,
+                         &monster});
   }
   drawables.push_back({static_cast<int>(player_y), static_cast<int>(player_x) - camera_x,
                        static_cast<int>(player_y) - camera_y, SpriteRole::Player, state.player.facing,
-                       state.player.moving, true});
+                       state.player.moving, false, true, nullptr});
 
   std::sort(drawables.begin(), drawables.end(), [](const Drawable& left, const Drawable& right) {
     return left.sort_y < right.sort_y;
   });
 
   for (const auto& drawable : drawables) {
+    if (drawable.monster != nullptr) {
+      render_monster(renderer, *drawable.monster, drawable.screen_x, drawable.screen_y, now);
+      continue;
+    }
     if (drawable.is_player) {
       render_character_with_palette(renderer, player_palette(state), drawable.role, drawable.facing, drawable.walking,
-                                    drawable.screen_x, drawable.screen_y, now);
+                                    drawable.screen_x, drawable.screen_y, now, drawable.blink);
+      render_player_swing(renderer, state, drawable.screen_x, drawable.screen_y, now);
     } else {
-      render_character(renderer, drawable.role, drawable.facing, drawable.walking,
-                       drawable.screen_x, drawable.screen_y, now);
+      render_character(renderer, drawable.role, drawable.facing, drawable.walking, drawable.screen_x,
+                       drawable.screen_y, now, drawable.blink);
+    }
+  }
+
+  for (const auto& monster : area->monsters) {
+    if (monster.hp <= 0) {
+      continue;
+    }
+    const int distance = manhattan_distance(monster.x, monster.y, state.player.tile_x, state.player.tile_y);
+    if (distance <= 2 || monster.hp < monster.max_hp || now < monster.hurt_until + 300U) {
+      render_monster_hp_bar(renderer, monster, monster.x * kTileSize - camera_x, monster.y * kTileSize - camera_y);
     }
   }
 
@@ -3029,6 +4886,7 @@ void render_world(SDL_Renderer* renderer, const GameState& state, Uint32 now) {
   }
 
   draw_objective_tokens(renderer, state);
+  render_player_hp_panel(renderer, state);
 }
 
 void render_area_banner(SDL_Renderer* renderer, const GameState& state, Uint32 now) {
@@ -3094,8 +4952,8 @@ void render_journal(SDL_Renderer* renderer, const GameState& state) {
   }
   fill_rect(renderer, SDL_Rect{20, 18, 216, 188}, SDL_Color{242, 236, 220, 250});
   draw_rect(renderer, SDL_Rect{20, 18, 216, 188}, SDL_Color{86, 79, 60, 255});
-  static const std::array<const char*, 4> kPages = {
-      "SAINT CATHERINE LEDGER", "PILGRIM PROFILE", "PACK & STORES", "WARDROBE"};
+  static const std::array<const char*, 6> kPages = {
+      "SAINT CATHERINE LEDGER", "PILGRIM PROFILE", "PACK & STORES", "WARDROBE", "VIRTUES", "HOLDINGS"};
   const int page = std::clamp(state.profile.journal_page, 0, static_cast<int>(kPages.size()) - 1);
   draw_text_box(renderer, kPages[static_cast<std::size_t>(page)], SDL_Rect{26, 24, 204, 16},
                 TextBoxOptions{2, 1, false, false, 1, 0, TextAlign::Center, TextVerticalAlign::Middle},
@@ -3186,19 +5044,55 @@ void render_journal(SDL_Renderer* renderer, const GameState& state) {
                   SDL_Color{72, 72, 68, 255});
   } else if (page == 2) {
     draw_text(renderer, "PACK", 32, 52, 1, SDL_Color{86, 79, 60, 255});
-    const auto pack = inventory_lines(state);
-    int y = 64;
-    for (std::size_t index = 0; index < pack.size() && index < 8; ++index) {
-      draw_text_box(renderer, pack[index], SDL_Rect{32, y, 184, 10},
-                    TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Left, TextVerticalAlign::Top},
-                    SDL_Color{42, 46, 52, 255});
-      y += 12;
-    }
-    draw_text_box(renderer, "BLACKPINE'S STALLS MOVE OIL, WAX, GRAIN, TOOLS, AND CLOTH. THE HOSPICE VALUES HERBS, OIL, AND SAFE ROADS.",
-                  SDL_Rect{32, 166, 184, 24},
-                  TextBoxOptions{1, 1, true, false, 3, 2, TextAlign::Left, TextVerticalAlign::Top},
+    draw_text_box(renderer, "DAY " + std::to_string(state.profile.day), SDL_Rect{32, 64, 54, 8},
+                  TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Left, TextVerticalAlign::Top},
+                  SDL_Color{62, 103, 57, 255});
+    draw_text_box(renderer, "READY: " + uppercase(active_item_label(state)), SDL_Rect{90, 64, 126, 8},
+                  TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Right, TextVerticalAlign::Top},
                   SDL_Color{72, 72, 68, 255});
-  } else {
+
+    const std::vector<std::string> pack_ids = sorted_item_ids(state.profile.inventory);
+    if (pack_ids.empty()) {
+      draw_text_box(renderer, "NO PACK ITEMS YET.", SDL_Rect{32, 84, 184, 10},
+                    TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Left, TextVerticalAlign::Top},
+                    SDL_Color{112, 88, 72, 255});
+    } else {
+      const int selection = std::clamp(state.profile.pack_selection, 0, static_cast<int>(pack_ids.size()) - 1);
+      const int visible_count = 6;
+      const int start = std::clamp(selection - 2, 0, std::max(0, static_cast<int>(pack_ids.size()) - visible_count));
+      int y = 82;
+      for (int row = 0; row < visible_count && start + row < static_cast<int>(pack_ids.size()); ++row) {
+        const std::string& item_id = pack_ids[static_cast<std::size_t>(start + row)];
+        const bool selected = start + row == selection;
+        const std::string label =
+            inventory_name(item_id) + " X" + std::to_string(inventory_count(state, item_id));
+        fill_rect(renderer, SDL_Rect{30, y - 2, 188, 10},
+                  selected ? SDL_Color{228, 220, 192, 255} : SDL_Color{0, 0, 0, 0});
+        draw_text_box(renderer, label, SDL_Rect{32, y, 184, 8},
+                      TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Left, TextVerticalAlign::Top},
+                      selected ? SDL_Color{62, 91, 54, 255} : SDL_Color{42, 46, 52, 255});
+        y += 12;
+      }
+
+      if (const InventoryItemDefinition* definition =
+              inventory_definition(pack_ids[static_cast<std::size_t>(selection)])) {
+        std::string action = "CARRY";
+        if (definition->heal_amount > 0) {
+          action = "EAT FOR +" + std::to_string(definition->heal_amount) + " HP";
+        } else if (!definition->crop_id.empty()) {
+          action = "READY TO SOW";
+        } else if (definition->decor_tile != '\0') {
+          action = "READY TO PLACE";
+        }
+        draw_text_box(renderer, action, SDL_Rect{32, 158, 184, 8},
+                      TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Left, TextVerticalAlign::Top},
+                      SDL_Color{62, 103, 57, 255});
+        draw_text_box(renderer, definition->description, SDL_Rect{32, 170, 184, 20},
+                      TextBoxOptions{1, 1, true, false, 3, 2, TextAlign::Left, TextVerticalAlign::Top},
+                      SDL_Color{72, 72, 68, 255});
+      }
+    }
+  } else if (page == 3) {
     draw_text(renderer, "EQUIPPED GARMENT", 32, 52, 1, SDL_Color{86, 79, 60, 255});
     fill_rect(renderer, SDL_Rect{154, 62, 52, 72}, SDL_Color{233, 225, 205, 255});
     draw_rect(renderer, SDL_Rect{154, 62, 52, 72}, SDL_Color{122, 110, 84, 255});
@@ -3226,12 +5120,75 @@ void render_journal(SDL_Renderer* renderer, const GameState& state) {
                       SDL_Color{72, 72, 68, 255});
       }
     }
+  } else if (page == 4) {
+    static const std::array<std::string, 6> kVirtueKeys = {
+        "fortitude", "temperance", "faith", "hope", "charity", "humility"};
+    int y = 56;
+    for (const auto& key : kVirtueKeys) {
+      fill_rect(renderer, SDL_Rect{32, y - 2, 184, 18}, SDL_Color{236, 229, 211, 255});
+      draw_rect(renderer, SDL_Rect{32, y - 2, 184, 18}, SDL_Color{122, 110, 84, 255});
+      draw_text_box(renderer, virtue_label(key), SDL_Rect{38, y + 1, 68, 8},
+                    TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Left, TextVerticalAlign::Top},
+                    SDL_Color{86, 79, 60, 255});
+      const int value = virtue_value(state, key);
+      draw_text_box(renderer, std::to_string(value), SDL_Rect{108, y + 1, 20, 8},
+                    TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Right, TextVerticalAlign::Top},
+                    SDL_Color{62, 91, 54, 255});
+      fill_rect(renderer, SDL_Rect{136, y + 2, 70, 6}, SDL_Color{208, 201, 186, 255});
+      const int bars = std::clamp(value, 0, 10);
+      fill_rect(renderer, SDL_Rect{136, y + 2, bars * 7, 6},
+                SDL_Color{122, 154, 77, 255});
+      y += 24;
+    }
+    draw_text_box(renderer,
+                  "PRUDENCE IS COUNTED AS HUMILITY, AND JUSTICE AS CHARITY, ACCORDING TO THE TEXT GAME'S CANONICAL VIRTUE LEDGER.",
+                  SDL_Rect{32, 176, 184, 18},
+                  TextBoxOptions{1, 1, true, false, 2, 2, TextAlign::Left, TextVerticalAlign::Top},
+                  SDL_Color{72, 72, 68, 255});
+  } else {
+    draw_text(renderer, "ACTIVE HOME", 32, 52, 1, SDL_Color{86, 79, 60, 255});
+    const std::string active_home = state.profile.active_home_id.empty() ? "NONE" : home_name(state.profile.active_home_id);
+    draw_text_box(renderer, active_home, SDL_Rect{32, 64, 184, 14},
+                  TextBoxOptions{2, 1, false, false, 1, 0, TextAlign::Left, TextVerticalAlign::Top},
+                  SDL_Color{42, 46, 52, 255});
+    draw_text_box(renderer,
+                  owns_home(state, "blackpine-cottage")
+                      ? "YOUR BLACKPINE COTTAGE STANDS JUST OFF THE GREEN. ITS CHEST CAN HOLD HOUSEHOLD RECORDS AND TRAVEL SUPPLIES."
+                      : "YSABEL THE NOTARY HANDLES PROPERTY CHARTERS FOR THE HOUSES AROUND BLACKPINE GREEN.",
+                  SDL_Rect{32, 84, 184, 30},
+                  TextBoxOptions{1, 1, true, false, 3, 2, TextAlign::Left, TextVerticalAlign::Top},
+                  SDL_Color{72, 72, 68, 255});
+    draw_text(renderer, "OWNED HOUSES", 32, 122, 1, SDL_Color{86, 79, 60, 255});
+    if (state.profile.owned_homes.empty()) {
+      draw_text_box(renderer, "NO CHARTERS YET.", SDL_Rect{32, 134, 184, 10},
+                    TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Left, TextVerticalAlign::Top},
+                    SDL_Color{112, 88, 72, 255});
+    } else {
+      int y = 134;
+      for (std::size_t index = 0; index < state.profile.owned_homes.size() && index < 4; ++index) {
+        draw_text_box(renderer, home_name(state.profile.owned_homes[index]), SDL_Rect{32, y, 184, 10},
+                      TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Left, TextVerticalAlign::Top},
+                      SDL_Color{42, 46, 52, 255});
+        y += 12;
+      }
+    }
+    draw_text_box(renderer, "HOUSE LOT: " + std::string(owns_home(state, "blackpine-cottage") ? "TILLABLE YARD OPEN" : "BUY LAND TO FARM"),
+                  SDL_Rect{32, 170, 184, 8},
+                  TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Left, TextVerticalAlign::Top},
+                  SDL_Color{62, 91, 54, 255});
+    draw_text_box(renderer, "CHEST ITEMS: " + std::to_string(static_cast<int>(sorted_item_ids(state.profile.stored_items).size())),
+                  SDL_Rect{32, 182, 184, 8},
+                  TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Left, TextVerticalAlign::Top},
+                  SDL_Color{62, 91, 54, 255});
   }
 
   draw_text_box(renderer, "LEFT RIGHT PAGES", SDL_Rect{30, 189, 96, 8},
                 TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Left, TextVerticalAlign::Top},
                 SDL_Color{86, 79, 60, 255});
-  draw_text_box(renderer, page == 3 ? "A EQUIP  B CLOSE" : "START OR B TO CLOSE", SDL_Rect{120, 189, 98, 8},
+  draw_text_box(renderer,
+                page == 2 ? "A USE  UP DOWN SELECT"
+                          : (page == 3 ? "A EQUIP  B CLOSE" : "START OR B TO CLOSE"),
+                SDL_Rect{120, 189, 98, 8},
                 TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Right, TextVerticalAlign::Top},
                 SDL_Color{86, 79, 60, 255});
 }
@@ -3347,11 +5304,14 @@ void render_shop(SDL_Renderer* renderer, const GameState& state) {
                 TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Right, TextVerticalAlign::Top},
                 SDL_Color{62, 103, 57, 255});
 
+  const int visible_count = 6;
+  const int selection = offers.empty() ? 0 : std::clamp(state.shop.selection, 0, static_cast<int>(offers.size()) - 1);
+  const int start = std::clamp(selection - 2, 0, std::max(0, static_cast<int>(offers.size()) - visible_count));
   int y = 66;
-  for (std::size_t index = 0; index < offers.size() && index < 6; ++index) {
-    const ShopOffer& offer = offers[index];
-    const bool selected = static_cast<int>(index) == state.shop.selection;
-    const bool owned = !offer.outfit_id.empty() && has_outfit(state, offer.outfit_id);
+  for (int row = 0; row < visible_count && start + row < static_cast<int>(offers.size()); ++row) {
+    const ShopOffer& offer = offers[static_cast<std::size_t>(start + row)];
+    const bool selected = start + row == selection;
+    const bool owned = shop_offer_owned(state, offer);
     fill_rect(renderer, SDL_Rect{28, y - 3, 200, 14}, selected ? SDL_Color{228, 220, 192, 255}
                                                                 : SDL_Color{243, 237, 221, 0});
     draw_text_box(renderer, offer.label + (owned ? " OWNED" : ""), SDL_Rect{32, y, 192, 8},
@@ -3361,7 +5321,7 @@ void render_shop(SDL_Renderer* renderer, const GameState& state) {
   }
 
   if (!offers.empty()) {
-    const ShopOffer& offer = offers[static_cast<std::size_t>(state.shop.selection)];
+    const ShopOffer& offer = offers[static_cast<std::size_t>(selection)];
     draw_text_box(renderer, offer.description, SDL_Rect{32, 154, 192, 24},
                   TextBoxOptions{1, 1, true, false, 3, 2, TextAlign::Left, TextVerticalAlign::Top},
                   SDL_Color{72, 72, 68, 255});
@@ -3371,6 +5331,65 @@ void render_shop(SDL_Renderer* renderer, const GameState& state) {
                 TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Left, TextVerticalAlign::Top},
                 SDL_Color{86, 79, 60, 255});
   draw_text_box(renderer, "B CLOSE", SDL_Rect{154, 186, 70, 8},
+                TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Right, TextVerticalAlign::Top},
+                SDL_Color{86, 79, 60, 255});
+}
+
+void render_chest(SDL_Renderer* renderer, const GameState& state) {
+  if (!state.chest.active) {
+    return;
+  }
+
+  fill_rect(renderer, SDL_Rect{16, 18, 224, 188}, SDL_Color{245, 239, 225, 250});
+  draw_rect(renderer, SDL_Rect{16, 18, 224, 188}, SDL_Color{86, 79, 60, 255});
+  draw_text_box(renderer, "HOUSEHOLD CHEST", SDL_Rect{24, 24, 208, 16},
+                TextBoxOptions{2, 1, false, false, 1, 0, TextAlign::Center, TextVerticalAlign::Middle},
+                SDL_Color{72, 84, 58, 255});
+  draw_text_box(renderer, home_name(state.profile.active_home_id.empty() ? "blackpine-cottage" : state.profile.active_home_id),
+                SDL_Rect{24, 40, 208, 8},
+                TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Center, TextVerticalAlign::Top},
+                SDL_Color{86, 79, 60, 255});
+
+  const SDL_Rect pack_box = {28, 58, 92, 112};
+  const SDL_Rect chest_box = {136, 58, 92, 112};
+  fill_rect(renderer, pack_box, state.chest.browse_storage ? SDL_Color{238, 232, 217, 255} : SDL_Color{227, 219, 189, 255});
+  fill_rect(renderer, chest_box, state.chest.browse_storage ? SDL_Color{227, 219, 189, 255} : SDL_Color{238, 232, 217, 255});
+  draw_rect(renderer, pack_box, SDL_Color{122, 110, 84, 255});
+  draw_rect(renderer, chest_box, SDL_Color{122, 110, 84, 255});
+  draw_text(renderer, "PACK", pack_box.x + pack_box.w / 2, pack_box.y - 10, 1, SDL_Color{86, 79, 60, 255}, true);
+  draw_text(renderer, "CHEST", chest_box.x + chest_box.w / 2, chest_box.y - 10, 1, SDL_Color{86, 79, 60, 255}, true);
+
+  const std::vector<std::string> pack_lines = inventory_lines(state);
+  const std::vector<std::string> chest_lines = stored_lines(state);
+  int y = pack_box.y + 6;
+  for (std::size_t index = 0; index < pack_lines.size() && index < 8; ++index) {
+    const bool selected = !state.chest.browse_storage && static_cast<int>(index) == state.chest.inventory_selection;
+    fill_rect(renderer, SDL_Rect{pack_box.x + 3, y - 2, pack_box.w - 6, 10},
+              selected ? SDL_Color{220, 211, 181, 255} : SDL_Color{0, 0, 0, 0});
+    draw_text_box(renderer, pack_lines[index], SDL_Rect{pack_box.x + 6, y, pack_box.w - 12, 8},
+                  TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Left, TextVerticalAlign::Top},
+                  selected ? SDL_Color{62, 91, 54, 255} : SDL_Color{42, 46, 52, 255});
+    y += 12;
+  }
+
+  y = chest_box.y + 6;
+  for (std::size_t index = 0; index < chest_lines.size() && index < 8; ++index) {
+    const bool selected = state.chest.browse_storage && static_cast<int>(index) == state.chest.storage_selection;
+    fill_rect(renderer, SDL_Rect{chest_box.x + 3, y - 2, chest_box.w - 6, 10},
+              selected ? SDL_Color{220, 211, 181, 255} : SDL_Color{0, 0, 0, 0});
+    draw_text_box(renderer, chest_lines[index], SDL_Rect{chest_box.x + 6, y, chest_box.w - 12, 8},
+                  TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Left, TextVerticalAlign::Top},
+                  selected ? SDL_Color{62, 91, 54, 255} : SDL_Color{42, 46, 52, 255});
+    y += 12;
+  }
+
+  draw_text_box(renderer, state.chest.browse_storage ? "A RETRIEVE" : "A STORE", SDL_Rect{28, 182, 78, 8},
+                TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Left, TextVerticalAlign::Top},
+                SDL_Color{86, 79, 60, 255});
+  draw_text_box(renderer, "LEFT RIGHT SWITCH", SDL_Rect{84, 182, 88, 8},
+                TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Center, TextVerticalAlign::Top},
+                SDL_Color{86, 79, 60, 255});
+  draw_text_box(renderer, "B CLOSE", SDL_Rect{168, 182, 60, 8},
                 TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Right, TextVerticalAlign::Top},
                 SDL_Color{86, 79, 60, 255});
 }
@@ -3392,8 +5411,11 @@ void render_frame(SDL_Renderer* renderer, const GameState& state, Uint32 now) {
     render_journal(renderer, state);
     render_dialogue(renderer, state);
     render_shop(renderer, state);
-    if (!state.dialogue.active && !state.journal_open && !state.shop.active) {
-      draw_text(renderer, "START JOURNAL  B RUN", 128, 206, 1, SDL_Color{248, 239, 214, 220}, true);
+    render_chest(renderer, state);
+    if (!state.dialogue.active && !state.journal_open && !state.shop.active && !state.chest.active) {
+      draw_text_box(renderer, "A ACT  B SWING  SELECT RUN  START LEDGER", SDL_Rect{20, 204, 216, 10},
+                    TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Center, TextVerticalAlign::Middle},
+                    SDL_Color{248, 239, 214, 220});
     }
   }
 }
@@ -3468,6 +5490,20 @@ bool capture_previews(SDL_Renderer* renderer, pp_context* context) {
   start_new_game(&world_state, 0);
   while (world_state.dialogue.active) {
     advance_dialogue(&world_state);
+  }
+  world_state.current_area = "lane";
+  world_state.player.tile_x = 8;
+  world_state.player.tile_y = 8;
+  world_state.player.start_x = 8;
+  world_state.player.start_y = 8;
+  world_state.player.target_x = 8;
+  world_state.player.target_y = 8;
+  world_state.player.moving = false;
+  world_state.player.facing = Direction::Right;
+  set_area_banner(&world_state, "BLACKPINE LANE", 0);
+  world_state.area_banner_until = 2200;
+  if (!capture_preview_scene(renderer, world_state, 400, output_dir / "lane-cart.bmp")) {
+    return false;
   }
   if (!travel_to_area(&world_state, "priory-court")) {
     std::fprintf(stderr, "Preview capture failed: could not route to Saint Catherine courtyard.\n");
@@ -3566,7 +5602,11 @@ bool can_occupy_for_path(const GameState& state, int area_index, int x, int y) {
   if (!tile_in_bounds(area, x, y) || !tile_passable(tile_at(area, x, y))) {
     return false;
   }
-  return !tile_occupied_by_npc(state, area.id, x, y);
+  if (tile_locked_by_progress(state, area.id, x, y)) {
+    return false;
+  }
+  return !tile_occupied_by_npc(state, area.id, x, y) && !tile_occupied_by_monster(state, area.id, x, y) &&
+         !tile_blocked_by_decor(state, area.id, x, y);
 }
 
 std::vector<Direction> find_path(const GameState& state,
@@ -3682,6 +5722,35 @@ bool move_to_destination(GameState* state, const std::string& area_id, int x, in
   return state->current_area == area_id && state->player.tile_x == x && state->player.tile_y == y;
 }
 
+bool validate_outdoor_art(const GameState& state) {
+  for (const auto& area : state.world) {
+    if (area.indoor) {
+      continue;
+    }
+    for (int y = 0; y < static_cast<int>(area.tiles.size()); ++y) {
+      for (int x = 0; x < static_cast<int>(area.tiles[y].size()); ++x) {
+        const char tile = area.tiles[y][x];
+        if (tile != kDoor && tile != kWindow && tile != kGlass) {
+          continue;
+        }
+        if (y <= 0 || !is_facade_support_tile(tile_at(area, x, y - 1))) {
+          std::fprintf(stderr,
+                       "Art audit failed: unsupported facade tile '%c' in %s at %d,%d.\n",
+                       tile, area.id.c_str(), x, y);
+          return false;
+        }
+        if (tile == kDoor && tile_at(area, x, y + 1) != kDoor && !is_threshold_tile(tile_at(area, x, y + 1))) {
+          std::fprintf(stderr,
+                       "Art audit failed: detached exterior door in %s at %d,%d.\n",
+                       area.id.c_str(), x, y);
+          return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
 bool travel_to_area(GameState* state, const std::string& area_id) {
   if (state->current_area == area_id) {
     return true;
@@ -3719,6 +5788,30 @@ bool travel_to_area(GameState* state, const std::string& area_id) {
   }
   if (area_id == "saint-hilda-hospice") {
     return move_to_destination(state, "saint-hilda-hospice", 7, 12);
+  }
+  if (area_id == "blackpine-cottage") {
+    if (!owns_home(*state, "blackpine-cottage")) {
+      return false;
+    }
+    if (!move_to_destination(state, "bellfield", 5, 16)) {
+      return false;
+    }
+    AudioState audio;
+    state->player.facing = Direction::Up;
+    interact(state, 0, &audio);
+    return state->current_area == "blackpine-cottage";
+  }
+  if (area_id == "blackpine-cottage-yard") {
+    if (!travel_to_area(state, "blackpine-cottage")) {
+      return false;
+    }
+    if (!move_to_tile(state, "blackpine-cottage", 7, 1)) {
+      return false;
+    }
+    return step_player_instant(state, Direction::Up, 0) && state->current_area == "blackpine-cottage-yard";
+  }
+  if (area_id == "blackpine-hospital") {
+    return move_to_destination(state, "blackpine-hospital", 8, 11);
   }
   return false;
 }
@@ -3800,6 +5893,22 @@ bool interact_with_tile(GameState* state, const std::string& area_id, int target
 
 bool run_smoke_test(GameState* state) {
   AudioState audio;
+  if (!validate_outdoor_art(*state)) {
+    return false;
+  }
+  Npc animation_probe;
+  animation_probe.id = "gate-friar";
+  animation_probe.x = 12;
+  animation_probe.y = 9;
+  if (!npc_is_blinking(animation_probe, 6000U) && !npc_is_blinking(animation_probe, 12000U)) {
+    std::fprintf(stderr, "Smoke test failed: NPC blink timing never triggered in sample windows.\n");
+    return false;
+  }
+  animation_probe.ambient_turn_count = 1;
+  if (ambient_npc_direction(animation_probe) == Direction::None) {
+    std::fprintf(stderr, "Smoke test failed: NPC ambient direction resolved to none.\n");
+    return false;
+  }
   const TextPageLayout fitted_label = layout_text_box_single(
       "BLACKPINE", SDL_Rect{0, 0, 60, 8},
       TextBoxOptions{2, 1, false, false, 1, 0, TextAlign::Left, TextVerticalAlign::Top});
@@ -3823,7 +5932,8 @@ bool run_smoke_test(GameState* state) {
   state->profile.hair_index = 1;
   start_new_game(state, 0);
   if (state->current_area != "house" || state->profile.coins != 11 || inventory_count(*state, "ledger_scraps") != 1 ||
-      inventory_count(*state, "sealed_letter") != 1 || state->profile.equipped_outfit_id != "merchant_doublet") {
+      inventory_count(*state, "sealed_letter") != 1 || state->profile.equipped_outfit_id != "merchant_doublet" ||
+      virtue_value(*state, "humility") != 1 || virtue_value(*state, "fortitude") != 1 || virtue_value(*state, "faith") != 1) {
     std::fprintf(stderr, "Smoke test failed: life path setup did not seed merchant profile.\n");
     return false;
   }
@@ -3839,39 +5949,112 @@ bool run_smoke_test(GameState* state) {
     std::fprintf(stderr, "Smoke test failed: mother blessing did not register.\n");
     return false;
   }
+  if (virtue_value(*state, "hope") < 1 || virtue_value(*state, "faith") < 2) {
+    std::fprintf(stderr, "Smoke test failed: mother blessing did not adjust the theological virtues.\n");
+    return false;
+  }
   if (!move_to_tile(state, "house", 7, 11, true) || state->current_area != "lane") {
     std::fprintf(stderr, "Smoke test failed: house door did not warp to Blackpine lane.\n");
     return false;
+  }
+  if (const Area* lane = area_for(*state, "lane")) {
+    if (tile_at(*lane, 4, 7) == kDoor) {
+      std::fprintf(stderr, "Smoke test failed: stray exterior house door still blocks the lane frontage.\n");
+      return false;
+    }
+    if (!tile_passable(tile_at(*lane, 17, 8))) {
+      std::fprintf(stderr, "Smoke test failed: cart boarding tile is not passable.\n");
+      return false;
+    }
+  }
+  if (const Area* square = area_for(*state, "square")) {
+    if (tile_at(*square, 6, 9) == kDoor) {
+      std::fprintf(stderr, "Smoke test failed: Blackpine square house still has a detached extra door tile.\n");
+      return false;
+    }
   }
   if (!talk_to_npc(state, "lane", "driver", &audio)) {
     std::fprintf(stderr, "Smoke test failed: lane driver interaction was unreachable.\n");
     return false;
   }
-  if (!move_to_tile(state, "lane", 23, 8, true) || state->current_area != "square") {
-    std::fprintf(stderr, "Smoke test failed: lane exit did not warp to Blackpine square.\n");
+  if (!move_to_tile(state, "lane", 17, 8, true) || state->current_area != "square") {
+    std::fprintf(stderr, "Smoke test failed: cart boarding tile did not warp to Blackpine square.\n");
     return false;
   }
   if (!opening_square_reached(*state) || !state->progress.visited_blackpine) {
     std::fprintf(stderr, "Smoke test failed: arrival at Blackpine square was not tracked.\n");
     return false;
   }
+  if (!talk_to_npc(state, "square", "margery", &audio)) {
+    std::fprintf(stderr, "Smoke test failed: Blackpine baker was unreachable after market densification.\n");
+    return false;
+  }
   if (!talk_to_npc(state, "square", "friar", &audio) || !state->progress.friar_blessing) {
     std::fprintf(stderr, "Smoke test failed: friar blessing did not register.\n");
     return false;
   }
-  if (!move_to_tile(state, "square", 14, 0, true) || state->current_area != "priory-road") {
-    std::fprintf(stderr, "Smoke test failed: square road exit did not warp to priory road.\n");
+  if (virtue_value(*state, "charity") < 1 || virtue_value(*state, "fortitude") < 2) {
+    std::fprintf(stderr, "Smoke test failed: friar blessing did not adjust virtues.\n");
     return false;
   }
-  if (!move_to_tile(state, "priory-road", 13, 0, true) || state->current_area != "priory-gate") {
-    std::fprintf(stderr, "Smoke test failed: priory road did not warp to the gate.\n");
+  GameState square_exit_probe = *state;
+  if (!move_to_tile(&square_exit_probe, "square", 18, 0, true) || square_exit_probe.current_area != "priory-road") {
+    std::fprintf(stderr, "Smoke test failed: right edge of square north road did not warp to priory road.\n");
+    return false;
+  }
+  if (!move_to_tile(state, "square", 13, 0, true) || state->current_area != "priory-road") {
+    std::fprintf(stderr, "Smoke test failed: left edge of square north road did not warp to priory road.\n");
+    return false;
+  }
+  GameState combat_probe = *state;
+  if (!move_to_tile(&combat_probe, "priory-road", 7, 8)) {
+    std::fprintf(stderr, "Smoke test failed: could not route to the road ratling for combat.\n");
+    return false;
+  }
+  combat_probe.player.facing = Direction::Right;
+  const Monster* road_ratling = monster_at(combat_probe, "priory-road", 8, 8);
+  if (road_ratling == nullptr) {
+    std::fprintf(stderr, "Smoke test failed: priory road ratling was not seeded.\n");
+    return false;
+  }
+  if (!player_attack(&combat_probe, 100U)) {
+    std::fprintf(stderr, "Smoke test failed: player swing did not connect with the road ratling.\n");
+    return false;
+  }
+  road_ratling = monster_at(combat_probe, "priory-road", 8, 8);
+  if (road_ratling == nullptr || road_ratling->hp >= road_ratling->max_hp) {
+    std::fprintf(stderr, "Smoke test failed: player swing did not reduce ratling hp.\n");
+    return false;
+  }
+  const int hp_before_counter = combat_probe.player.hp;
+  update_monsters(&combat_probe, 1000U);
+  if (combat_probe.player.hp >= hp_before_counter) {
+    std::fprintf(stderr, "Smoke test failed: adjacent monster did not counterattack.\n");
+    return false;
+  }
+  player_attack(&combat_probe, 1400U);
+  if (monster_at(combat_probe, "priory-road", 8, 8) != nullptr) {
+    std::fprintf(stderr, "Smoke test failed: second sword swing did not finish the road ratling.\n");
+    return false;
+  }
+  GameState gate_entry_probe = *state;
+  if (!move_to_tile(&gate_entry_probe, "priory-road", 16, 0, true) || gate_entry_probe.current_area != "priory-gate") {
+    std::fprintf(stderr, "Smoke test failed: right edge of priory road did not warp into the gate.\n");
+    return false;
+  }
+  if (!move_to_tile(state, "priory-road", 11, 0, true) || state->current_area != "priory-gate") {
+    std::fprintf(stderr, "Smoke test failed: left edge of priory road did not warp into the gate.\n");
+    return false;
+  }
+  if (can_occupy(*state, "priory-gate", 10, 7)) {
+    std::fprintf(stderr, "Smoke test failed: priory gate door was passable before the gate friar opened it.\n");
     return false;
   }
   if (!talk_to_npc(state, "priory-gate", "gate-friar", &audio) || !state->progress.gate_opened) {
     std::fprintf(stderr, "Smoke test failed: gate friar did not open Saint Catherine.\n");
     return false;
   }
-  if (!move_to_tile(state, "priory-gate", 8, 6, true) || state->current_area != "priory-court") {
+  if (!move_to_tile(state, "priory-gate", 10, 7, true) || state->current_area != "priory-court") {
     std::fprintf(stderr, "Smoke test failed: priory gate did not warp into the courtyard.\n");
     return false;
   }
@@ -3898,8 +6081,16 @@ bool run_smoke_test(GameState* state) {
     std::fprintf(stderr, "Smoke test failed: village green route did not register.\n");
     return false;
   }
+  if (!talk_to_npc(state, "bellfield", "agnes", &audio)) {
+    std::fprintf(stderr, "Smoke test failed: village green miller was unreachable after town pass.\n");
+    return false;
+  }
   if (!travel_to_area(state, "candlewharf") || !state->progress.visited_quay) {
     std::fprintf(stderr, "Smoke test failed: Ravenscar route did not register.\n");
+    return false;
+  }
+  if (!talk_to_npc(state, "candlewharf", "rowan", &audio)) {
+    std::fprintf(stderr, "Smoke test failed: Ravenscar roper was unreachable after quay pass.\n");
     return false;
   }
   if (!talk_to_npc(state, "chapel", "prior", &audio)) {
@@ -3963,6 +6154,257 @@ bool run_smoke_test(GameState* state) {
   }
   state->shop = {};
 
+  if (!talk_to_npc(state, "bellfield", "alisoun", &audio) || state->shop.id != ShopId::BlackpineCloth) {
+    std::fprintf(stderr, "Smoke test failed: Alisoun did not open her stall from NPC interaction.\n");
+    return false;
+  }
+  state->shop = {};
+
+  const int faith_before_prayer = virtue_value(*state, "faith");
+  if (!interact_with_tile(state, "chapel", 6, 2, &audio)) {
+    std::fprintf(stderr, "Smoke test failed: chapel rail interaction did not open.\n");
+    return false;
+  }
+  while (state->dialogue.active) {
+    advance_dialogue(state);
+  }
+  if (virtue_value(*state, "faith") <= faith_before_prayer) {
+    std::fprintf(stderr, "Smoke test failed: chapel prayer did not improve the virtue ledger.\n");
+    return false;
+  }
+
+  state->profile.coins = std::max(state->profile.coins, 30);
+  if (!talk_to_npc(state, "bellfield", "ysabel", &audio) || state->shop.id != ShopId::PropertyCharter) {
+    std::fprintf(stderr, "Smoke test failed: Ysabel did not open the property charter menu.\n");
+    return false;
+  }
+  if (!purchase_shop_offer(state, 0) || !owns_home(*state, "blackpine-cottage") ||
+      state->profile.active_home_id != "blackpine-cottage") {
+    std::fprintf(stderr, "Smoke test failed: Blackpine cottage purchase did not complete.\n");
+    return false;
+  }
+  state->shop = {};
+  if (!travel_to_area(state, "bellfield") || !move_to_tile(state, "bellfield", 5, 16)) {
+    std::fprintf(stderr, "Smoke test failed: could not stand before the owned cottage door.\n");
+    return false;
+  }
+  state->player.facing = Direction::Up;
+  interact(state, 0, &audio);
+  if (state->current_area != "blackpine-cottage") {
+    std::fprintf(stderr, "Smoke test failed: owned cottage door did not enter the purchased home.\n");
+    return false;
+  }
+  if (!move_to_tile(state, "blackpine-cottage", 11, 8)) {
+    std::fprintf(stderr, "Smoke test failed: could not stand before the house chest.\n");
+    return false;
+  }
+  state->player.facing = Direction::Up;
+  interact(state, 0, &audio);
+  if (!state->chest.active) {
+    std::fprintf(stderr, "Smoke test failed: house chest did not open.\n");
+    return false;
+  }
+  const std::vector<std::string> pack_ids = sorted_item_ids(state->profile.inventory);
+  const auto ledger_it = std::find(pack_ids.begin(), pack_ids.end(), "ledger_scraps");
+  if (ledger_it == pack_ids.end()) {
+    std::fprintf(stderr, "Smoke test failed: ledger scraps were unavailable for chest storage test.\n");
+    return false;
+  }
+  state->chest.inventory_selection = static_cast<int>(std::distance(pack_ids.begin(), ledger_it));
+  const int stored_before = stored_count(*state, "ledger_scraps");
+  if (!store_selected_item(state, 0) || stored_count(*state, "ledger_scraps") <= stored_before) {
+    std::fprintf(stderr, "Smoke test failed: storing an item in the home chest failed.\n");
+    return false;
+  }
+  state->chest.browse_storage = true;
+  const std::vector<std::string> chest_ids = sorted_item_ids(state->profile.stored_items);
+  const auto stored_ledger_it = std::find(chest_ids.begin(), chest_ids.end(), "ledger_scraps");
+  if (stored_ledger_it == chest_ids.end()) {
+    std::fprintf(stderr, "Smoke test failed: stored ledger scraps were unavailable for retrieval test.\n");
+    return false;
+  }
+  state->chest.storage_selection = static_cast<int>(std::distance(chest_ids.begin(), stored_ledger_it));
+  if (!retrieve_selected_item(state, 0) || stored_count(*state, "ledger_scraps") != stored_before) {
+    std::fprintf(stderr, "Smoke test failed: retrieving an item from the home chest failed.\n");
+    return false;
+  }
+  state->chest = {};
+
+  state->profile.coins = std::max(state->profile.coins, 80);
+  if (!talk_to_npc(state, "bellfield", "ysabel", &audio) || state->shop.id != ShopId::PropertyCharter) {
+    std::fprintf(stderr, "Smoke test failed: Ysabel did not reopen the property ledger for furnishings.\n");
+    return false;
+  }
+  state->shop.selection = 1;
+  if (!purchase_shop_offer(state, 0) || inventory_count(*state, "rush_bench_item") <= 0) {
+    std::fprintf(stderr, "Smoke test failed: household decor purchase did not add a placeable item.\n");
+    return false;
+  }
+  state->shop = {};
+
+  if (!talk_to_npc(state, "bellfield", "alisoun", &audio) || state->shop.id != ShopId::BlackpineCloth) {
+    std::fprintf(stderr, "Smoke test failed: Alisoun did not reopen the market menu for farm goods.\n");
+    return false;
+  }
+  state->shop.selection = 2;
+  if (!purchase_shop_offer(state, 0) || inventory_count(*state, "field_tools") <= 0) {
+    std::fprintf(stderr, "Smoke test failed: field tools purchase did not complete.\n");
+    return false;
+  }
+  state->shop.selection = 3;
+  if (!purchase_shop_offer(state, 0) || inventory_count(*state, "cabbage_seed") <= 0) {
+    std::fprintf(stderr, "Smoke test failed: cabbage seed purchase did not complete.\n");
+    return false;
+  }
+  state->shop.selection = 6;
+  if (!purchase_shop_offer(state, 0) || inventory_count(*state, "rye_loaf") <= 0) {
+    std::fprintf(stderr, "Smoke test failed: food purchase did not complete.\n");
+    return false;
+  }
+  state->shop = {};
+
+  state->player.hp = std::max(1, state->player.max_hp - 5);
+  {
+    const std::vector<std::string> ids = sorted_item_ids(state->profile.inventory);
+    const auto loaf_it = std::find(ids.begin(), ids.end(), "rye_loaf");
+    if (loaf_it == ids.end()) {
+      std::fprintf(stderr, "Smoke test failed: rye loaf missing before food-heal check.\n");
+      return false;
+    }
+    state->profile.pack_selection = static_cast<int>(std::distance(ids.begin(), loaf_it));
+  }
+  const int hp_before_meal = state->player.hp;
+  if (!use_selected_pack_item(state, 0) || state->player.hp <= hp_before_meal) {
+    std::fprintf(stderr, "Smoke test failed: food use did not restore hp.\n");
+    return false;
+  }
+
+  {
+    const std::vector<std::string> ids = sorted_item_ids(state->profile.inventory);
+    const auto seed_it = std::find(ids.begin(), ids.end(), "cabbage_seed");
+    if (seed_it == ids.end()) {
+      std::fprintf(stderr, "Smoke test failed: cabbage seed missing before sowing.\n");
+      return false;
+    }
+    state->profile.pack_selection = static_cast<int>(std::distance(ids.begin(), seed_it));
+  }
+  if (!use_selected_pack_item(state, 0) || state->profile.active_item_id != "cabbage_seed") {
+    std::fprintf(stderr, "Smoke test failed: seed packet did not become the active sowing item.\n");
+    return false;
+  }
+
+  if (!travel_to_area(state, "blackpine-cottage") || !move_to_tile(state, "blackpine-cottage", 7, 1) ||
+      !step_player_instant(state, Direction::Up, 0) ||
+      state->current_area != "blackpine-cottage-yard") {
+    std::fprintf(stderr, "Smoke test failed: cottage back door did not reach the tillable yard. area=%s x=%d y=%d\n",
+                 state->current_area.c_str(), state->player.tile_x, state->player.tile_y);
+    return false;
+  }
+  if (!move_to_tile(state, "blackpine-cottage-yard", 6, 9)) {
+    std::fprintf(stderr, "Smoke test failed: could not reach the cottage plot edge.\n");
+    return false;
+  }
+  state->player.facing = Direction::Up;
+  interact(state, 0, &audio);
+  const CropPlot* plot = crop_plot_at(*state, "blackpine-cottage-yard", 6, 8);
+  if (plot == nullptr || !plot->tilled || !plot->crop_id.empty()) {
+    std::fprintf(stderr, "Smoke test failed: field tools did not till the cottage yard.\n");
+    return false;
+  }
+  interact(state, 0, &audio);
+  plot = crop_plot_at(*state, "blackpine-cottage-yard", 6, 8);
+  if (plot == nullptr || plot->crop_id != "cabbage") {
+    std::fprintf(stderr, "Smoke test failed: active seed did not sow the tilled yard.\n");
+    return false;
+  }
+  if (!move_to_tile(state, "blackpine-cottage-yard", 8, 3) || !step_player_instant(state, Direction::Up, 0) ||
+      state->current_area != "blackpine-cottage") {
+    std::fprintf(stderr, "Smoke test failed: yard return door did not re-enter the cottage.\n");
+    return false;
+  }
+  if (!move_to_tile(state, "blackpine-cottage", 3, 8)) {
+    std::fprintf(stderr, "Smoke test failed: could not stand at the cottage bed.\n");
+    return false;
+  }
+  state->player.facing = Direction::Up;
+  const int day_before_sleep = state->profile.day;
+  interact(state, 0, &audio);
+  interact(state, 0, &audio);
+  interact(state, 0, &audio);
+  if (state->profile.day != day_before_sleep + 3) {
+    std::fprintf(stderr, "Smoke test failed: cottage bed did not advance the day counter.\n");
+    return false;
+  }
+  if (!move_to_tile(state, "blackpine-cottage", 7, 1) || !step_player_instant(state, Direction::Up, 0) ||
+      state->current_area != "blackpine-cottage-yard" ||
+      !move_to_tile(state, "blackpine-cottage-yard", 6, 9)) {
+    std::fprintf(stderr, "Smoke test failed: could not return to the matured crop plot.\n");
+    return false;
+  }
+  state->player.facing = Direction::Up;
+  const int cabbage_before_harvest = inventory_count(*state, "cabbage_head");
+  interact(state, 0, &audio);
+  if (inventory_count(*state, "cabbage_head") <= cabbage_before_harvest) {
+    std::fprintf(stderr, "Smoke test failed: mature cottage crop did not harvest into inventory.\n");
+    return false;
+  }
+  if (!move_to_tile(state, "blackpine-cottage-yard", 8, 3) || !step_player_instant(state, Direction::Up, 0) ||
+      state->current_area != "blackpine-cottage") {
+    std::fprintf(stderr, "Smoke test failed: yard return route broke after harvesting.\n");
+    return false;
+  }
+  {
+    const std::vector<std::string> ids = sorted_item_ids(state->profile.inventory);
+    const auto bench_it = std::find(ids.begin(), ids.end(), "rush_bench_item");
+    if (bench_it == ids.end()) {
+      std::fprintf(stderr, "Smoke test failed: decor item missing before placement.\n");
+      return false;
+    }
+    state->profile.pack_selection = static_cast<int>(std::distance(ids.begin(), bench_it));
+  }
+  if (!use_selected_pack_item(state, 0) || state->profile.active_item_id != "rush_bench_item") {
+    std::fprintf(stderr, "Smoke test failed: decor item did not become the active placement item.\n");
+    return false;
+  }
+  if (!move_to_tile(state, "blackpine-cottage", 6, 9)) {
+    std::fprintf(stderr, "Smoke test failed: could not stand at the cottage decor placement tile.\n");
+    return false;
+  }
+  state->player.facing = Direction::Right;
+  interact(state, 0, &audio);
+  if (decor_placement_at(*state, "blackpine-cottage", 7, 9) == nullptr) {
+    std::fprintf(stderr, "Smoke test failed: household decor did not place inside the owned cottage.\n");
+    return false;
+  }
+
+  GameState hospital_probe = *state;
+  if (!travel_to_area(&hospital_probe, "candlewharf") || !move_to_tile(&hospital_probe, "candlewharf", 14, 15)) {
+    std::fprintf(stderr, "Smoke test failed: could not position the hospital respawn probe by a Blackpine-side monster.\n");
+    return false;
+  }
+  hospital_probe.player.hp = 1;
+  update_monsters(&hospital_probe, 5000U);
+  if (hospital_probe.current_area != "blackpine-hospital" || hospital_probe.player.hp != hospital_probe.player.max_hp) {
+    std::fprintf(stderr, "Smoke test failed: zero hp did not return the player to Blackpine's hospital.\n");
+    return false;
+  }
+  if (!talk_to_npc(&hospital_probe, "blackpine-hospital", "apothecary-eda", &audio) ||
+      hospital_probe.shop.id != ShopId::HospiceSupply) {
+    std::fprintf(stderr, "Smoke test failed: Blackpine infirmary apothecary did not open the care supplies menu.\n");
+    return false;
+  }
+
+  GameState priory_respawn_probe = *state;
+  if (!travel_to_area(&priory_respawn_probe, "chapel")) {
+    std::fprintf(stderr, "Smoke test failed: could not position the priory-side recovery probe.\n");
+    return false;
+  }
+  return_player_to_safety(&priory_respawn_probe, 0);
+  if (priory_respawn_probe.current_area != "saint-hilda-hospice") {
+    std::fprintf(stderr, "Smoke test failed: priory-side recovery did not route to Saint Hilda hospice.\n");
+    return false;
+  }
+
   GameState hospice_exit_probe = *state;
   if (!travel_to_area(&hospice_exit_probe, "priory-court")) {
     std::fprintf(stderr, "Smoke test failed: hospice priory door did not return to the courtyard. area=%s x=%d y=%d\n",
@@ -4010,11 +6452,17 @@ bool run_smoke_test(GameState* state) {
 int main(int argc, char** argv) {
   bool smoke_test = false;
   bool capture_previews_mode = false;
+  bool force_software_renderer = false;
+  bool force_accelerated_renderer = false;
   for (int index = 1; index < argc; ++index) {
     if (std::string(argv[index]) == "--smoke-test") {
       smoke_test = true;
     } else if (std::string(argv[index]) == "--capture-previews") {
       capture_previews_mode = true;
+    } else if (std::string(argv[index]) == "--software-renderer") {
+      force_software_renderer = true;
+    } else if (std::string(argv[index]) == "--accelerated-renderer") {
+      force_accelerated_renderer = true;
     }
   }
 
@@ -4062,8 +6510,28 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  SDL_Renderer* renderer =
-      SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+  std::vector<Uint32> renderer_attempts;
+#if defined(_WIN32)
+  const bool prefer_software_renderer = !force_accelerated_renderer;
+#else
+  const bool prefer_software_renderer = force_software_renderer;
+#endif
+  if (prefer_software_renderer) {
+    renderer_attempts.push_back(SDL_RENDERER_SOFTWARE | SDL_RENDERER_PRESENTVSYNC);
+    renderer_attempts.push_back(SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+  } else {
+    renderer_attempts.push_back(SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    renderer_attempts.push_back(SDL_RENDERER_SOFTWARE | SDL_RENDERER_PRESENTVSYNC);
+  }
+  renderer_attempts.push_back(0);
+
+  SDL_Renderer* renderer = nullptr;
+  for (Uint32 flags : renderer_attempts) {
+    renderer = SDL_CreateRenderer(window, -1, flags);
+    if (renderer != nullptr) {
+      break;
+    }
+  }
   if (renderer == nullptr) {
     std::fprintf(stderr, "SDL_CreateRenderer failed: %s\n", SDL_GetError());
     SDL_DestroyWindow(window);
@@ -4178,15 +6646,51 @@ int main(int argc, char** argv) {
       if (buttons.pressed_b || buttons.pressed_start || buttons.pressed_select) {
         state.shop = {};
       }
+    } else if (state.chest.active) {
+      if (buttons.pressed_left || buttons.pressed_right) {
+        state.chest.browse_storage = !state.chest.browse_storage;
+      } else if (buttons.pressed_up) {
+        if (state.chest.browse_storage) {
+          const int count = std::max(1, static_cast<int>(sorted_item_ids(state.profile.stored_items).size()));
+          state.chest.storage_selection = (state.chest.storage_selection + count - 1) % count;
+        } else {
+          const int count = std::max(1, static_cast<int>(sorted_item_ids(state.profile.inventory).size()));
+          state.chest.inventory_selection = (state.chest.inventory_selection + count - 1) % count;
+        }
+      } else if (buttons.pressed_down) {
+        if (state.chest.browse_storage) {
+          const int count = std::max(1, static_cast<int>(sorted_item_ids(state.profile.stored_items).size()));
+          state.chest.storage_selection = (state.chest.storage_selection + 1) % count;
+        } else {
+          const int count = std::max(1, static_cast<int>(sorted_item_ids(state.profile.inventory).size()));
+          state.chest.inventory_selection = (state.chest.inventory_selection + 1) % count;
+        }
+      } else if (buttons.pressed_a) {
+        if (state.chest.browse_storage) {
+          retrieve_selected_item(&state, now);
+        } else {
+          store_selected_item(&state, now);
+        }
+      }
+      if (buttons.pressed_b || buttons.pressed_start || buttons.pressed_select) {
+        state.chest = {};
+      }
     } else if (state.dialogue.active) {
       if (buttons.pressed_a || buttons.pressed_start || buttons.pressed_b) {
         advance_dialogue(&state);
       }
     } else if (state.journal_open) {
       if (buttons.pressed_left) {
-        state.profile.journal_page = (state.profile.journal_page + 3) % 4;
+        state.profile.journal_page = (state.profile.journal_page + 5) % 6;
       } else if (buttons.pressed_right) {
-        state.profile.journal_page = (state.profile.journal_page + 1) % 4;
+        state.profile.journal_page = (state.profile.journal_page + 1) % 6;
+      } else if (state.profile.journal_page == 2 && !state.profile.inventory.empty() &&
+                 (buttons.pressed_up || buttons.pressed_down)) {
+        const int count = static_cast<int>(sorted_item_ids(state.profile.inventory).size());
+        state.profile.pack_selection =
+            (state.profile.pack_selection + count + (buttons.pressed_down ? 1 : -1)) % count;
+      } else if (state.profile.journal_page == 2 && buttons.pressed_a) {
+        use_selected_pack_item(&state, now);
       } else if (state.profile.journal_page == 3 &&
                  !state.profile.unlocked_outfits.empty() && (buttons.pressed_up || buttons.pressed_down)) {
         const int count = static_cast<int>(state.profile.unlocked_outfits.size());
@@ -4205,10 +6709,18 @@ int main(int argc, char** argv) {
     } else {
       if (buttons.pressed_start) {
         state.journal_open = true;
+      } else if (!state.player.moving && buttons.pressed_b) {
+        player_attack(&state, now);
       } else if (!state.player.moving && buttons.pressed_a) {
         interact(&state, now, &audio);
       }
       update_player(&state, buttons, now);
+      if (!state.dialogue.active && !state.shop.active && !state.journal_open) {
+        update_monsters(&state, now);
+      }
+      if (!state.player.moving && !state.dialogue.active && !state.shop.active && !state.journal_open) {
+        update_npcs(&state, now);
+      }
     }
 
     render_frame(renderer, state, now);

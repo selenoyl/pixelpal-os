@@ -16,9 +16,19 @@ Current direction:
 Current bundled games:
 
 - `BotByte` - maze chase game
+- `BROTHERS` - Benedictine monk arcade platformer inspired by single-screen 1983 coin-op pacing
+- `Glitch Grid` - digital minesweeper-style scan-and-flag game
+- `KILOBYTES` - memory-themed 2048-style merge puzzle
+- `PixelPal Checkers` - classic checkers with forced captures and a CPU opponent
+- `PixelPal Chess` - full-rule chess with castling, en passant, promotion, and a CPU opponent
 - `Priory` - top-down pilgrimage RPG chapter set across a priory, market town, and wharf
 - `Slinkbit` - snake-style cable game
 - `Stonefall` - falling-block puzzle game
+
+Desktop tools:
+
+- `PixelPal Engine CLI` - starter project generator, validator, inspector, and legacy-project upgrader for the shared RPG engine schema
+- `Priory Editor` - Windows-first SDL desktop editor for Priory maps, warps, NPCs, stamps, and quest data
 
 Shelved for now:
 
@@ -30,6 +40,8 @@ Shelved for now:
 - `sdk/` - `libpixelpal` runtime API for games
 - `services/` - service scripts and `systemd` units for the Linux target
 - `tools/` - install/cache helpers
+- `tools/pixelpal-engine-cli/` - command-line utilities for the shared PixelPal RPG engine format
+- `tools/priory-editor/` - standalone desktop editor for Priory content authoring
 - `sample-games/` - bundled sample games and prototypes
 - `themes/` - default theme assets, palette, and menu audio layout
 - `docs/` - architecture and deployment notes
@@ -62,6 +74,20 @@ Configured preset:
 ```sh
 cmake --preset windows-debug
 cmake --build --preset windows-debug
+```
+
+Priory Editor convenience scripts:
+
+```bat
+tools\build-priory-editor-windows.cmd
+tools\run-priory-editor-windows.cmd
+```
+
+PixelPal engine CLI convenience scripts:
+
+```bat
+tools\build-pixelpal-engine-cli-windows.cmd
+tools\run-pixelpal-engine-cli.cmd --smoke-test
 ```
 
 ### Linux
@@ -130,6 +156,8 @@ Bundled games currently live in the OS build tree, but the packaging format is b
 
 - [Architecture](docs/architecture.md)
 - [Deployment](docs/deployment.md)
+- [PixelPal RPG Engine](docs/pixelpal-engine.md)
+- [Priory Editor](docs/priory-editor.md)
 
 ## GitHub notes
 

@@ -1,0 +1,11 @@
+id = "pixelpal-chess"
+name = "Chess"
+version = "0.1.0"
+exec = "bin/pixelpal-chess"
+icon = "icon.ppm"
+splash = "splash.ppm"
+sdk_version = "1"
+author = "PixelPal OS"
+description = "Full-rule chess with castling, en passant, promotion, and a built-in AI opponent."
+supports_network_lan = false
+min_os_version = "0.1.0"

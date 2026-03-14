@@ -544,7 +544,7 @@ void draw_library(SDL_Renderer* renderer,
                   const pixelpal::StatusSnapshot& status,
                   std::size_t selected,
                   const std::string& message) {
-  draw_text(renderer, "PIXELPAL OS", kWindowWidth / 2, 92, 4, colors.text, true);
+  draw_text(renderer, "PIXELPAL OS", kWindowWidth / 2, 84, 4, colors.text, true);
   draw_status_bar(renderer, colors, status);
   draw_text(renderer, "GAME SELECT", kWindowWidth / 2, 122, 2, colors.muted, true);
 
@@ -553,39 +553,40 @@ void draw_library(SDL_Renderer* renderer,
     draw_text(renderer, "CHECK WINDOWS STAGING", kWindowWidth / 2, 244, 2, colors.muted, true);
   } else {
     const SDL_Rect panel{56, 144, 400, 264};
-    const SDL_Rect clip{panel.x + 8, panel.y + 8, panel.w - 16, panel.h - 16};
-    const int panel_center_y = panel.y + panel.h / 2;
+    const SDL_Rect clip{panel.x + 12, panel.y + 18, panel.w - 24, panel.h - 36};
+    const int visible_rows = 5;
     const int item_count = static_cast<int>(catalog.games.size());
     const int selected_index = static_cast<int>(selected);
 
     fill_rect(renderer, {panel.x + 6, panel.y + 8, panel.w, panel.h}, colors.panel_shadow);
     fill_rect(renderer, panel, with_alpha(colors.panel, 228));
     draw_rect(renderer, panel, colors.muted);
+    draw_text(renderer, "STAGED GAMES", kWindowWidth / 2, panel.y + 12, 1, colors.muted, true);
 
     SDL_RenderSetClipRect(renderer, &clip);
-    for (int offset = -2; offset <= 2; ++offset) {
-      const int wrapped = (selected_index + offset + item_count) % item_count;
-      const bool active = offset == 0;
-      const int distance = std::abs(offset);
-      const int card_w = active ? 328 : (distance == 1 ? 292 : 252);
-      const int card_h = active ? 78 : (distance == 1 ? 58 : 42);
-      const int card_x = (kWindowWidth - card_w) / 2;
-      const int card_y = panel_center_y - (card_h / 2) + offset * 74;
-      const SDL_Color fill = active ? colors.highlight : with_alpha(colors.panel, distance == 1 ? 236 : 208);
-      const SDL_Color shadow = with_alpha(colors.panel_shadow, distance == 2 ? 150 : 210);
-      const int text_scale = active ? 3 : (distance == 1 ? 2 : 1);
-      const int text_y = card_y + (active ? 28 : (distance == 1 ? 21 : 15));
+    for (int row = 0; row < visible_rows; ++row) {
+      const int wrapped = (selected_index - (visible_rows / 2) + row + item_count * 4) % item_count;
+      const bool active = wrapped == selected_index;
+      const int card_x = panel.x + 24;
+      const int card_y = panel.y + 28 + row * 44;
+      const int card_w = panel.w - 48;
+      const int card_h = 34;
+      const SDL_Color fill = active ? colors.highlight : with_alpha(colors.panel, row % 2 == 0 ? 236 : 214);
+      const SDL_Color shadow = active ? colors.panel_shadow : with_alpha(colors.panel_shadow, 158);
 
-      fill_rect(renderer, {card_x + 4, card_y + 6, card_w, card_h}, shadow);
+      fill_rect(renderer, {card_x + 4, card_y + 5, card_w, card_h}, shadow);
       fill_rect(renderer, {card_x, card_y, card_w, card_h}, fill);
       draw_rect(renderer, {card_x, card_y, card_w, card_h}, colors.muted);
-      draw_text(renderer, catalog.games[wrapped].name, kWindowWidth / 2, text_y, text_scale,
-                active ? colors.highlight_text : colors.text, true);
+      draw_text(renderer, catalog.games[wrapped].name, card_x + 16, card_y + 11, 2,
+                active ? colors.highlight_text : colors.text, false);
+      if (active) {
+        draw_text(renderer, ">", card_x - 12, card_y + 11, 2, colors.text, false);
+      }
     }
     SDL_RenderSetClipRect(renderer, nullptr);
 
     draw_text(renderer,
-              std::to_string(selected + 1) + " / " + std::to_string(catalog.games.size()),
+              std::to_string(selected + 1) + " OF " + std::to_string(catalog.games.size()),
               kWindowWidth / 2, 420, 2, colors.muted, true);
   }
 

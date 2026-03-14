@@ -170,6 +170,10 @@ static int abs_int(int value) {
   return value < 0 ? -value : value;
 }
 
+static float abs_float(float value) {
+  return value < 0.0f ? -value : value;
+}
+
 static void save_high_score(const pp_context* context, int high_score) {
   char path[PP_PATH_CAPACITY];
   FILE* file = NULL;
@@ -827,17 +831,52 @@ static void interpolated_actor_position(const actor* entity,
   }
 }
 
+static float wrapped_x_delta(float delta) {
+  const float half_width = (float)MAP_WIDTH * 0.5f;
+  if (delta > half_width) {
+    delta -= (float)MAP_WIDTH;
+  } else if (delta < -half_width) {
+    delta += (float)MAP_WIDTH;
+  }
+  return delta;
+}
+
+static int actors_overlap_now(const actor* player,
+                              int player_interval,
+                              const actor* robot,
+                              int robot_interval,
+                              Uint32 now) {
+  float player_x = 0.0f;
+  float player_y = 0.0f;
+  float robot_x = 0.0f;
+  float robot_y = 0.0f;
+  float dx = 0.0f;
+  float dy = 0.0f;
+  const float hitbox_x = 0.34f;
+  const float hitbox_y = 0.40f;
+
+  interpolated_actor_position(player, now, player_interval, &player_x, &player_y);
+  interpolated_actor_position(robot, now, robot_interval, &robot_x, &robot_y);
+  dx = wrapped_x_delta(player_x - robot_x);
+  dy = player_y - robot_y;
+  return abs_float(dx) <= hitbox_x && abs_float(dy) <= hitbox_y;
+}
+
 static int resolve_collisions(actor* player,
                               actor robots[4],
                               int* score,
                               int* high_score,
                               int* robot_streak,
-                              tone_state* tone) {
+                              tone_state* tone,
+                              Uint32 now,
+                              int player_interval,
+                              int robot_interval) {
   static const int eat_scores[4] = {200, 400, 800, 1600};
   int index = 0;
   for (index = 0; index < 4; ++index) {
     actor* robot = &robots[index];
-    if (robot->x != player->x || robot->y != player->y || robot->dead) {
+    if (robot->dead ||
+        !actors_overlap_now(player, player_interval, robot, robot_interval, now)) {
       continue;
     }
     if (robot->frightened) {
@@ -1233,46 +1272,30 @@ int main(int argc, char** argv) {
           high_score = score;
           save_high_score(&context, high_score);
         }
-        if (now >= respawn_safe_until &&
-            resolve_collisions(&player, robots, &score, &high_score, &robot_streak, &tone)) {
-          lives -= 1;
-          if (lives <= 0) {
-            game_over = 1;
-            paused = 0;
-            trigger_tone(&tone, 140.0f, 260);
-            save_high_score(&context, high_score);
-          } else {
-            reset_after_life(&player, robots, &frightened_active, &frightened_until,
-                             &robot_streak, &bonus_active, &chase_mode, &phase_index,
-                             &phase_started_at, now);
-            last_player_step = now;
-            last_robot_step = now;
-            respawn_safe_until = now + RESPAWN_GRACE_MS;
-            trigger_tone(&tone, 220.0f, 160);
-          }
-        }
       }
 
       if (!game_over && now - last_robot_step >= (Uint32)robot_interval) {
         update_robots(robots, &player, tiles, chase_mode, now);
         last_robot_step = now;
-        if (now >= respawn_safe_until &&
-            resolve_collisions(&player, robots, &score, &high_score, &robot_streak, &tone)) {
-          lives -= 1;
-          if (lives <= 0) {
-            game_over = 1;
-            paused = 0;
-            trigger_tone(&tone, 140.0f, 260);
-            save_high_score(&context, high_score);
-          } else {
-            reset_after_life(&player, robots, &frightened_active, &frightened_until,
-                             &robot_streak, &bonus_active, &chase_mode, &phase_index,
-                             &phase_started_at, now);
-            last_player_step = now;
-            last_robot_step = now;
-            respawn_safe_until = now + RESPAWN_GRACE_MS;
-            trigger_tone(&tone, 220.0f, 160);
-          }
+      }
+
+      if (!game_over && now >= respawn_safe_until &&
+          resolve_collisions(&player, robots, &score, &high_score, &robot_streak, &tone,
+                             now, player_interval, robot_interval)) {
+        lives -= 1;
+        if (lives <= 0) {
+          game_over = 1;
+          paused = 0;
+          trigger_tone(&tone, 140.0f, 260);
+          save_high_score(&context, high_score);
+        } else {
+          reset_after_life(&player, robots, &frightened_active, &frightened_until,
+                           &robot_streak, &bonus_active, &chase_mode, &phase_index,
+                           &phase_started_at, now);
+          last_player_step = now;
+          last_robot_step = now;
+          respawn_safe_until = now + RESPAWN_GRACE_MS;
+          trigger_tone(&tone, 220.0f, 160);
         }
       }
 

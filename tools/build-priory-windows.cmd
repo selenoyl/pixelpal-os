@@ -14,7 +14,22 @@ if not exist "C:\msys64\mingw64\bin\g++.exe" (
   exit /b 1
 )
 
-set "PATH=C:\msys64\mingw64\bin;%PATH%"
+for %%F in (
+  "C:\msys64\mingw64\bin\libgcc_s_seh-1.dll"
+  "C:\msys64\mingw64\bin\libmpc-3.dll"
+  "C:\msys64\mingw64\bin\libgmp-10.dll"
+  "C:\msys64\mingw64\bin\libisl-23.dll"
+  "C:\msys64\mingw64\bin\libstdc++-6.dll"
+  "C:\msys64\mingw64\bin\libwinpthread-1.dll"
+) do (
+  if not exist %%~F (
+    echo Missing MinGW runtime dependency: %%~F
+    echo Repair the MSYS2 MinGW-w64 toolchain before building.
+    exit /b 1
+  )
+)
+
+set "PATH=C:\msys64\mingw64\bin;C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem"
 set "TMP=%ROOT%\build\tmp"
 set "TEMP=%TMP%"
 set "TMPDIR=%TMP%"
