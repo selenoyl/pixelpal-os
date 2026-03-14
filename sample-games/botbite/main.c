@@ -29,6 +29,7 @@
 #define BONUS_Y 9
 #define RESPAWN_GRACE_MS 900U
 #define FRIGHTENED_DURATION_MS 7000U
+#define ROBOT_RESPAWN_DELAY_MS 1600U
 
 typedef enum direction {
   DIR_NONE = 0,
@@ -60,6 +61,7 @@ typedef struct actor {
   int frightened;
   int dead;
   int type;
+  Uint32 home_hold_until;
 } actor;
 
 static const char* k_maze_template[MAP_HEIGHT] = {
@@ -782,8 +784,15 @@ static void update_robots(actor robots[4],
   for (index = 0; index < 4; ++index) {
     actor* robot = &robots[index];
     if (robot->dead && robot->x == HOME_X && robot->y == HOME_Y) {
+      if (robot->home_hold_until == 0U) {
+        robot->home_hold_until = now + ROBOT_RESPAWN_DELAY_MS;
+      }
+      if (now < robot->home_hold_until) {
+        continue;
+      }
       robot->dead = 0;
       robot->frightened = 0;
+      robot->home_hold_until = 0U;
     }
     robot->next_dir = choose_robot_direction(robot, player, robots, tiles, chase_mode);
     if (robot->next_dir != DIR_NONE) {
@@ -888,6 +897,7 @@ static int resolve_collisions(actor* player,
       robot->dead = 1;
       robot->frightened = 0;
       robot->dir = reverse_direction(robot->dir);
+      robot->home_hold_until = 0U;
       trigger_tone(tone, 980.0f, 120);
       continue;
     }

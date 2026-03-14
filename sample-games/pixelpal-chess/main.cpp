@@ -21,9 +21,9 @@ constexpr int kBoardSize = 8;
 constexpr int kCellSize = 40;
 constexpr int kBoardX = 20;
 constexpr int kBoardY = 96;
-constexpr int kPanelX = 356;
+constexpr int kPanelX = 348;
 constexpr int kPanelY = 96;
-constexpr int kPanelW = 136;
+constexpr int kPanelW = 144;
 constexpr int kPanelH = 320;
 constexpr int kAiDelayMs = 260;
 constexpr int kSearchDepth = 4;
@@ -97,6 +97,9 @@ struct GameState {
   std::vector<Move> promotion_moves;
   int promotion_index = 0;
   std::string end_message;
+  bool versus_cpu = true;
+  bool mode_select_active = true;
+  int mode_index = 0;
 };
 
 constexpr std::array<int, 64> kPawnTable = {
@@ -425,6 +428,9 @@ GameState apply_move(const GameState& state, const Move& move) {
   next.halfmove_clock = state.halfmove_clock;
   next.ply_count = state.ply_count;
   next.cursor = state.cursor;
+  next.versus_cpu = state.versus_cpu;
+  next.mode_select_active = state.mode_select_active;
+  next.mode_index = state.mode_index;
 
   const int moving_piece = next.board[move.from];
   const int captured_piece = next.board[move.to];
@@ -977,6 +983,12 @@ void reset_game(GameState& game) {
   refresh_game_state(game);
 }
 
+void start_match(GameState& game, bool versus_cpu) {
+  game.versus_cpu = versus_cpu;
+  reset_game(game);
+  game.mode_select_active = false;
+}
+
 char piece_symbol(int piece) {
   switch (piece_type(piece)) {
     case kPawn: return 'P';
@@ -1101,39 +1113,41 @@ std::string current_status_text(const GameState& game) {
   if (king_sq >= 0 && is_square_attacked(game, king_sq, !game.white_turn)) {
     return "CHECK";
   }
-  if (!game.white_turn) {
+  if (!game.white_turn && game.versus_cpu) {
     return "CPU THINK";
   }
   return "READY";
 }
 
 void draw_sidebar(SDL_Renderer* renderer, const Theme& theme, const GameState& game) {
+  const int left_x = kPanelX + 12;
+  const int right_x = kPanelX + kPanelW - 12;
   fill_rect(renderer, {kPanelX + 6, kPanelY + 8, kPanelW, kPanelH}, theme.frame);
   fill_rect(renderer, {kPanelX, kPanelY, kPanelW, kPanelH}, theme.panel);
   draw_rect(renderer, {kPanelX, kPanelY, kPanelW, kPanelH}, theme.muted);
 
-  draw_text(renderer, "TURN", kPanelX + 12, kPanelY + 16, 2, theme.muted, false);
-  draw_text_right(renderer, game.white_turn ? "WHITE" : "BLACK", kPanelX + kPanelW - 12, kPanelY + 16, 2,
+  draw_text(renderer, "TURN", left_x, kPanelY + 16, 1, theme.muted, false);
+  draw_text_right(renderer, game.white_turn ? "WHITE" : "BLACK", right_x, kPanelY + 30, 2,
                   theme.text);
 
-  draw_text(renderer, "STATUS", kPanelX + 12, kPanelY + 42, 2, theme.muted, false);
-  draw_text_right(renderer, current_status_text(game), kPanelX + kPanelW - 12, kPanelY + 42, 2, theme.text);
+  draw_text(renderer, "STATUS", left_x, kPanelY + 58, 1, theme.muted, false);
+  draw_text_right(renderer, current_status_text(game), right_x, kPanelY + 72, 2, theme.text);
 
-  draw_text(renderer, "MOVE", kPanelX + 12, kPanelY + 68, 2, theme.muted, false);
-  draw_text_right(renderer, std::to_string(1 + game.ply_count / 2), kPanelX + kPanelW - 12, kPanelY + 68, 2,
+  draw_text(renderer, "MOVE", left_x, kPanelY + 100, 1, theme.muted, false);
+  draw_text_right(renderer, std::to_string(1 + game.ply_count / 2), right_x, kPanelY + 114, 2,
                   theme.text);
 
-  fill_rect(renderer, {kPanelX + 10, kPanelY + 112, kPanelW - 20, 104}, theme.panel_highlight);
-  draw_text(renderer, "A SELECT", kPanelX + 18, kPanelY + 126, 1, theme.text, false);
-  draw_text(renderer, "B CANCEL", kPanelX + 18, kPanelY + 144, 1, theme.text, false);
-  draw_text(renderer, "START PAUSE", kPanelX + 18, kPanelY + 162, 1, theme.text, false);
-  draw_text(renderer, "SELECT EXIT", kPanelX + 18, kPanelY + 180, 1, theme.text, false);
+  fill_rect(renderer, {kPanelX + 10, kPanelY + 140, kPanelW - 20, 82}, theme.panel_highlight);
+  draw_text(renderer, "A SELECT", kPanelX + 18, kPanelY + 154, 1, theme.text, false);
+  draw_text(renderer, "B CANCEL", kPanelX + 18, kPanelY + 170, 1, theme.text, false);
+  draw_text(renderer, "START PAUSE", kPanelX + 18, kPanelY + 186, 1, theme.text, false);
+  draw_text(renderer, "SELECT EXIT", kPanelX + 18, kPanelY + 202, 1, theme.text, false);
 
-  draw_text(renderer, "RULES", kPanelX + 12, kPanelY + 238, 2, theme.muted, false);
-  draw_text(renderer, "CASTLING", kPanelX + 18, kPanelY + 266, 1, theme.text, false);
+  draw_text(renderer, "RULES", left_x, kPanelY + 238, 2, theme.muted, false);
+  draw_text(renderer, "CASTLING", kPanelX + 18, kPanelY + 268, 1, theme.text, false);
   draw_text(renderer, "EN PASSANT", kPanelX + 18, kPanelY + 284, 1, theme.text, false);
-  draw_text(renderer, "PROMOTION", kPanelX + 18, kPanelY + 302, 1, theme.text, false);
-  draw_text(renderer, "CPU DEPTH 4", kPanelX + 18, kPanelY + 320, 1, theme.muted, false);
+  draw_text(renderer, "PROMOTION", kPanelX + 18, kPanelY + 300, 1, theme.text, false);
+  draw_text(renderer, "CPU DEPTH 4", kPanelX + 18, kPanelY + 316, 1, theme.muted, false);
 }
 
 void draw_overlay(SDL_Renderer* renderer, const Theme& theme, const std::string& title, const std::string& subtitle) {
@@ -1141,6 +1155,29 @@ void draw_overlay(SDL_Renderer* renderer, const Theme& theme, const std::string&
   draw_rect(renderer, {78, 208, 356, 92}, theme.frame);
   draw_text(renderer, title, kWindowWidth / 2, 224, 4, theme.text, true);
   draw_text(renderer, subtitle, kWindowWidth / 2, 260, 2, theme.muted, true);
+}
+
+void draw_mode_overlay(SDL_Renderer* renderer, const Theme& theme, int mode_index) {
+  const SDL_Rect box{94, 188, 324, 92};
+  const SDL_Rect cpu_card{118, 224, 116, 42};
+  const SDL_Rect local_card{278, 224, 116, 42};
+  fill_rect(renderer, box, theme.overlay);
+  draw_rect(renderer, box, theme.frame);
+  draw_text(renderer, "CHOOSE MODE", kWindowWidth / 2, 198, 3, theme.text, true);
+
+  fill_rect(renderer, cpu_card, mode_index == 0 ? theme.cursor : theme.panel_highlight);
+  draw_rect(renderer, cpu_card, theme.frame);
+  draw_text(renderer, "CPU", cpu_card.x + cpu_card.w / 2, cpu_card.y + 8, 2,
+            mode_index == 0 ? theme.black_piece : theme.text, true);
+  draw_text(renderer, "OPPONENT", cpu_card.x + cpu_card.w / 2, cpu_card.y + 24, 1,
+            mode_index == 0 ? theme.black_piece : theme.text, true);
+
+  fill_rect(renderer, local_card, mode_index == 1 ? theme.cursor : theme.panel_highlight);
+  draw_rect(renderer, local_card, theme.frame);
+  draw_text(renderer, "2 PLAYER", local_card.x + local_card.w / 2, local_card.y + 8, 1,
+            mode_index == 1 ? theme.black_piece : theme.text, true);
+  draw_text(renderer, "SAME DEVICE", local_card.x + local_card.w / 2, local_card.y + 24, 1,
+            mode_index == 1 ? theme.black_piece : theme.text, true);
 }
 
 void draw_promotion_overlay(SDL_Renderer* renderer, const Theme& theme, const GameState& game) {
@@ -1195,7 +1232,7 @@ int main(int argc, char** argv) {
   width = std::max(width, 512);
   height = std::max(height, 512);
 
-  window = SDL_CreateWindow("PixelPal Chess", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+  window = SDL_CreateWindow("Chess", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                             width, height, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
   if (window == nullptr) {
     std::fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
@@ -1225,6 +1262,7 @@ int main(int argc, char** argv) {
   }
 
   reset_game(game);
+  game.mode_select_active = true;
 
   while (!pp_should_exit(&context)) {
     const Uint32 now = SDL_GetTicks();
@@ -1238,7 +1276,20 @@ int main(int argc, char** argv) {
     const bool pressed_b = input.b && !previous.b;
     const bool pressed_start = input.start && !previous.start;
 
-    if (pressed_start) {
+    if (game.mode_select_active) {
+      if (pressed_left || pressed_up) {
+        game.mode_index = 0;
+        trigger_tone(tone, 420.0f, 18);
+      }
+      if (pressed_right || pressed_down) {
+        game.mode_index = 1;
+        trigger_tone(tone, 420.0f, 18);
+      }
+      if (pressed_a || pressed_start) {
+        start_match(game, game.mode_index == 0);
+        trigger_tone(tone, 760.0f, 80);
+      }
+    } else if (pressed_start) {
       if (game.game_over) {
         reset_game(game);
         trigger_tone(tone, 760.0f, 80);
@@ -1248,7 +1299,7 @@ int main(int argc, char** argv) {
       }
     }
 
-    if (!game.paused && !game.game_over) {
+    if (!game.mode_select_active && !game.paused && !game.game_over) {
       if (game.promotion_pending) {
         if (pressed_left) {
           game.promotion_index = (game.promotion_index + 3) % 4;
@@ -1268,10 +1319,14 @@ int main(int argc, char** argv) {
           const Move chosen = game.promotion_moves[game.promotion_index];
           game = apply_move(game, chosen);
           refresh_game_state(game);
-          game.ai_ready_at = now + kAiDelayMs;
+          if (game.versus_cpu && !game.white_turn && !game.game_over) {
+            game.ai_ready_at = now + kAiDelayMs;
+          } else {
+            game.ai_ready_at = 0U;
+          }
           trigger_tone(tone, 860.0f, 40);
         }
-      } else if (game.white_turn) {
+      } else if (game.white_turn || !game.versus_cpu) {
         int file = file_of(game.cursor);
         int rank = rank_of(game.cursor);
         if (pressed_left) {
@@ -1316,18 +1371,24 @@ int main(int argc, char** argv) {
               } else {
                 game = apply_move(game, matching.front());
                 refresh_game_state(game);
-                game.ai_ready_at = now + kAiDelayMs;
+                if (game.versus_cpu && !game.white_turn && !game.game_over) {
+                  game.ai_ready_at = now + kAiDelayMs;
+                } else {
+                  game.ai_ready_at = 0U;
+                }
                 trigger_tone(tone, matching.front().promotion != 0 ? 900.0f : 760.0f, 38);
               }
               handled = true;
             }
           }
-          if (!handled && game.board[game.cursor] > 0 && square_has_legal_move(game, game.cursor)) {
+          const int piece = game.board[game.cursor];
+          const bool current_player_piece = game.white_turn ? piece > 0 : piece < 0;
+          if (!handled && current_player_piece && square_has_legal_move(game, game.cursor)) {
             game.selected = game.cursor;
             trigger_tone(tone, 560.0f, 28);
           }
         }
-      } else if (now >= game.ai_ready_at) {
+      } else if (game.versus_cpu && now >= game.ai_ready_at) {
         if (!game.legal_moves.empty()) {
           const Move best = choose_ai_move(game);
           game = apply_move(game, best);
@@ -1338,13 +1399,18 @@ int main(int argc, char** argv) {
     }
 
     fill_rect(renderer, {0, 0, kWindowWidth, kWindowHeight}, theme.background);
-    draw_text(renderer, "PIXELPAL CHESS", kWindowWidth / 2, 30, 5, theme.text, true);
-    draw_text(renderer, "FULL RULES / CASTLING / EN PASSANT / CPU OPPONENT", kWindowWidth / 2, 70, 1, theme.muted,
+    draw_text(renderer, "CHESS", kWindowWidth / 2, 18, 6, theme.text, true);
+    draw_text(renderer,
+              game.versus_cpu ? "FULL RULES / CASTLING / EN PASSANT / CPU OPPONENT"
+                              : "FULL RULES / CASTLING / EN PASSANT / 2 PLAYER",
+              kWindowWidth / 2, 62, 1, theme.muted,
               true);
     draw_board(renderer, theme, game);
     draw_sidebar(renderer, theme, game);
 
-    if (game.promotion_pending) {
+    if (game.mode_select_active) {
+      draw_mode_overlay(renderer, theme, game.mode_index);
+    } else if (game.promotion_pending) {
       draw_promotion_overlay(renderer, theme, game);
     } else if (game.paused && !game.game_over) {
       draw_overlay(renderer, theme, "PAUSED", "START TO RESUME");

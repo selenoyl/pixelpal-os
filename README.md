@@ -16,7 +16,6 @@ Current direction:
 Current bundled games:
 
 - `BotByte` - maze chase game
-- `BROTHERS` - Benedictine monk arcade platformer inspired by single-screen 1983 coin-op pacing
 - `Glitch Grid` - digital minesweeper-style scan-and-flag game
 - `KILOBYTES` - memory-themed 2048-style merge puzzle
 - `PixelPal Checkers` - classic checkers with forced captures and a CPU opponent
@@ -32,6 +31,7 @@ Desktop tools:
 
 Shelved for now:
 
+- `BROTHERS` - Benedictine monk arcade platformer prototype, removed from the default build and launcher game list until a later gameplay pass
 - `Grand Prix` - experimental kart racer prototype, removed from the default build and staged game list until the design is revisited
 
 ## Repository layout

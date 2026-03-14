@@ -1196,6 +1196,47 @@ void draw_text_box(SDL_Renderer* renderer,
   draw_text_layout(renderer, layout_text_box_single(text, box, options), box, options, color);
 }
 
+void draw_clipped_text_line(SDL_Renderer* renderer,
+                            const std::string& text,
+                            const SDL_Rect& box,
+                            int scale,
+                            SDL_Color color,
+                            Uint32 now,
+                            bool scroll_if_overflow) {
+  const std::string upper = uppercase(text);
+  const int width = text_width(upper, scale);
+  const int draw_y = box.y + std::max(0, (box.h - text_height(scale)) / 2);
+
+  SDL_Rect previous_clip{};
+  const bool had_clip = SDL_RenderIsClipEnabled(renderer) == SDL_TRUE;
+  if (had_clip) {
+    SDL_RenderGetClipRect(renderer, &previous_clip);
+  }
+  SDL_RenderSetClipRect(renderer, &box);
+
+  if (width <= box.w || !scroll_if_overflow) {
+    draw_text(renderer, upper, box.x, draw_y, scale, color);
+  } else {
+    constexpr Uint32 kScrollDelayMs = 650;
+    constexpr Uint32 kScrollStepMs = 55;
+    const int gap_pixels = 12 * scale;
+    const int cycle_width = width + gap_pixels;
+    int offset = 0;
+    if (now > kScrollDelayMs) {
+      offset = static_cast<int>(((now - kScrollDelayMs) / kScrollStepMs) % cycle_width);
+    }
+
+    draw_text(renderer, upper, box.x - offset, draw_y, scale, color);
+    draw_text(renderer, upper, box.x - offset + cycle_width, draw_y, scale, color);
+  }
+
+  if (had_clip) {
+    SDL_RenderSetClipRect(renderer, &previous_clip);
+  } else {
+    SDL_RenderSetClipRect(renderer, nullptr);
+  }
+}
+
 SpritePalette palette_for(SpriteRole role) {
   switch (role) {
     case SpriteRole::Player:
@@ -5195,13 +5236,16 @@ void render_journal(SDL_Renderer* renderer, const GameState& state) {
 
 void render_title(SDL_Renderer* renderer, const GameState& state, Uint32 now) {
   fill_rect(renderer, SDL_Rect{0, 0, kScreenWidth, kScreenHeight}, SDL_Color{112, 172, 204, 255});
-  fill_rect(renderer, SDL_Rect{0, 80, kScreenWidth, 144}, SDL_Color{128, 181, 120, 255});
-  fill_rect(renderer, SDL_Rect{64, 54, 128, 64}, SDL_Color{173, 112, 88, 255});
-  fill_rect(renderer, SDL_Rect{76, 58, 104, 44}, SDL_Color{202, 140, 116, 255});
-  fill_rect(renderer, SDL_Rect{92, 26, 72, 40}, SDL_Color{124, 68, 70, 255});
-  fill_rect(renderer, SDL_Rect{100, 34, 56, 24}, SDL_Color{156, 85, 85, 255});
-  fill_rect(renderer, SDL_Rect{122, 74, 12, 28}, SDL_Color{112, 79, 48, 255});
-  draw_pixel(renderer, 127, 21, SDL_Color{255, 221, 129, 255}, 3);
+  fill_rect(renderer, SDL_Rect{0, 86, kScreenWidth, 138}, SDL_Color{128, 181, 120, 255});
+  fill_rect(renderer, SDL_Rect{28, 12, 200, 54}, SDL_Color{224, 214, 191, 168});
+  draw_rect(renderer, SDL_Rect{28, 12, 200, 54}, SDL_Color{87, 80, 61, 255});
+
+  fill_rect(renderer, SDL_Rect{64, 74, 128, 58}, SDL_Color{173, 112, 88, 255});
+  fill_rect(renderer, SDL_Rect{76, 78, 104, 40}, SDL_Color{202, 140, 116, 255});
+  fill_rect(renderer, SDL_Rect{90, 48, 76, 38}, SDL_Color{124, 68, 70, 255});
+  fill_rect(renderer, SDL_Rect{98, 56, 60, 22}, SDL_Color{156, 85, 85, 255});
+  fill_rect(renderer, SDL_Rect{121, 90, 14, 28}, SDL_Color{112, 79, 48, 255});
+  draw_pixel(renderer, 127, 40, SDL_Color{255, 221, 129, 255}, 3);
 
   const int wave = static_cast<int>((now / 150U) % 4U);
   fill_rect(renderer, SDL_Rect{0, 184, kScreenWidth, 40}, SDL_Color{71, 121, 178, 255});
@@ -5211,11 +5255,11 @@ void render_title(SDL_Renderer* renderer, const GameState& state, Uint32 now) {
     fill_rect(renderer, SDL_Rect{172 + wave, row + 1, 50, 1}, SDL_Color{138, 195, 232, 255});
   }
 
-  draw_text(renderer, "PRIORY", 128, 22, 5, SDL_Color{248, 240, 222, 255}, true);
-  draw_text_box(renderer, "SAINT CATHERINE", SDL_Rect{34, 56, 188, 14},
+  draw_text(renderer, "PRIORY", 128, 18, 4, SDL_Color{248, 240, 222, 255}, true);
+  draw_text_box(renderer, "SAINT CATHERINE", SDL_Rect{38, 46, 180, 12},
                 TextBoxOptions{2, 1, false, false, 1, 0, TextAlign::Center, TextVerticalAlign::Middle},
                 SDL_Color{70, 84, 62, 255});
-  draw_text_box(renderer, "THE BLACKPINE CHAPTER", SDL_Rect{34, 72, 188, 8},
+  draw_text_box(renderer, "THE BLACKPINE CHAPTER", SDL_Rect{38, 61, 180, 8},
                 TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Center, TextVerticalAlign::Middle},
                 SDL_Color{70, 84, 62, 255});
 
@@ -5224,11 +5268,11 @@ void render_title(SDL_Renderer* renderer, const GameState& state, Uint32 now) {
                      : std::vector<std::string>{"BEGIN REBUILD"};
   for (std::size_t index = 0; index < options.size(); ++index) {
     const bool selected = static_cast<int>(index) == state.title_selection;
-    fill_rect(renderer, SDL_Rect{66, 124 + static_cast<int>(index) * 22, 124, 18},
+    fill_rect(renderer, SDL_Rect{66, 138 + static_cast<int>(index) * 22, 124, 18},
               selected ? SDL_Color{246, 239, 221, 255} : SDL_Color{194, 184, 157, 220});
-    draw_rect(renderer, SDL_Rect{66, 124 + static_cast<int>(index) * 22, 124, 18},
+    draw_rect(renderer, SDL_Rect{66, 138 + static_cast<int>(index) * 22, 124, 18},
               SDL_Color{96, 83, 61, 255});
-    draw_text_box(renderer, options[index], SDL_Rect{72, 129 + static_cast<int>(index) * 22, 112, 8},
+    draw_text_box(renderer, options[index], SDL_Rect{72, 143 + static_cast<int>(index) * 22, 112, 8},
                   TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Center, TextVerticalAlign::Top},
                   selected ? SDL_Color{59, 87, 54, 255} : SDL_Color{83, 74, 54, 255});
   }
@@ -5236,7 +5280,7 @@ void render_title(SDL_Renderer* renderer, const GameState& state, Uint32 now) {
   draw_text(renderer, "A TO SELECT", 128, 202, 1, SDL_Color{245, 236, 215, 255}, true);
 }
 
-void render_creation(SDL_Renderer* renderer, const GameState& state) {
+void render_creation(SDL_Renderer* renderer, const GameState& state, Uint32 now) {
   const LifePathDefinition& life_path = current_life_path(state);
   GameState preview = state;
   preview.profile.equipped_outfit_id = life_path.starter_outfit_id;
@@ -5260,15 +5304,15 @@ void render_creation(SDL_Renderer* renderer, const GameState& state) {
   int y = 52;
   for (std::size_t index = 0; index < labels.size(); ++index) {
     const bool selected = static_cast<int>(index) == state.creation.row;
+    const SDL_Rect value_box{34, y + 8, 112, 8};
     fill_rect(renderer, SDL_Rect{28, y - 4, 124, 22}, selected ? SDL_Color{226, 217, 186, 255}
                                                                 : SDL_Color{236, 229, 211, 255});
     draw_rect(renderer, SDL_Rect{28, y - 4, 124, 22}, SDL_Color{122, 110, 84, 255});
     draw_text_box(renderer, labels[index], SDL_Rect{34, y - 1, 112, 8},
                   TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Left, TextVerticalAlign::Top},
                   SDL_Color{86, 79, 60, 255});
-    draw_text_box(renderer, values[index], SDL_Rect{34, y + 8, 112, 12},
-                  TextBoxOptions{1, 1, true, false, 2, 1, TextAlign::Left, TextVerticalAlign::Top},
-                  selected ? SDL_Color{62, 91, 54, 255} : SDL_Color{42, 46, 52, 255});
+    draw_clipped_text_line(renderer, values[index], value_box, 1,
+                           selected ? SDL_Color{62, 91, 54, 255} : SDL_Color{42, 46, 52, 255}, now, selected);
     y += 28;
   }
 
@@ -5282,7 +5326,7 @@ void render_creation(SDL_Renderer* renderer, const GameState& state) {
   draw_text_box(renderer, life_path.description, SDL_Rect{164, 138, 56, 28},
                 TextBoxOptions{1, 1, true, false, 4, 2, TextAlign::Left, TextVerticalAlign::Top},
                 SDL_Color{72, 72, 68, 255});
-  draw_text_box(renderer, "STARTER: " + inventory_name_list(life_path.starter_items), SDL_Rect{28, 188, 196, 14},
+  draw_text_box(renderer, "STARTER: " + inventory_name_list(life_path.starter_items), SDL_Rect{28, 184, 196, 18},
                 TextBoxOptions{1, 1, true, false, 2, 1, TextAlign::Left, TextVerticalAlign::Top},
                 SDL_Color{72, 72, 68, 255});
 }
@@ -5403,7 +5447,7 @@ void render_frame(SDL_Renderer* renderer, const GameState& state, Uint32 now) {
   if (state.on_title) {
     render_title(renderer, state, now);
   } else if (state.creation.active) {
-    render_creation(renderer, state);
+    render_creation(renderer, state, now);
   } else {
     render_world(renderer, state, now);
     render_area_banner(renderer, state, now);
