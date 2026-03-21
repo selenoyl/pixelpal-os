@@ -170,6 +170,33 @@ bool is_white_piece(int piece) { return piece > 0; }
 int piece_type(int piece) { return std::abs(piece); }
 int sign(int value) { return value < 0 ? -1 : (value > 0 ? 1 : 0); }
 
+bool pawn_move_is_forward(int piece, const Move& move) {
+  const int from_file = file_of(move.from);
+  const int from_rank = rank_of(move.from);
+  const int to_file = file_of(move.to);
+  const int to_rank = rank_of(move.to);
+  const int rank_delta = to_rank - from_rank;
+  const int file_delta = std::abs(to_file - from_file);
+
+  if (piece > 0) {
+    if (file_delta == 0) {
+      return rank_delta == -1 || (from_rank == 6 && rank_delta == -2);
+    }
+    if (file_delta == 1) {
+      return rank_delta == -1;
+    }
+  } else if (piece < 0) {
+    if (file_delta == 0) {
+      return rank_delta == 1 || (from_rank == 1 && rank_delta == 2);
+    }
+    if (file_delta == 1) {
+      return rank_delta == 1;
+    }
+  }
+
+  return false;
+}
+
 void fill_rect(SDL_Renderer* renderer, SDL_Rect rect, SDL_Color color) {
   SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
   SDL_RenderFillRect(renderer, &rect);
@@ -517,9 +544,10 @@ std::vector<Move> generate_pseudo_moves(const GameState& state) {
     const int type = piece_type(piece);
 
     if (type == kPawn) {
-      const int dir = state.white_turn ? -1 : 1;
-      const int start_rank = state.white_turn ? 6 : 1;
-      const int promotion_rank = state.white_turn ? 0 : 7;
+      const bool white_pawn = piece > 0;
+      const int dir = white_pawn ? -1 : 1;
+      const int start_rank = white_pawn ? 6 : 1;
+      const int promotion_rank = white_pawn ? 0 : 7;
       const int one_rank = rank + dir;
 
       if (in_bounds(file, one_rank) && state.board[make_sq(file, one_rank)] == 0) {
@@ -676,6 +704,13 @@ std::vector<Move> generate_pseudo_moves(const GameState& state) {
 
 bool move_is_legal(const GameState& state, const Move& move) {
   const bool mover_is_white = state.white_turn;
+  const int moving_piece = state.board[move.from];
+  if (moving_piece == 0 || is_white_piece(moving_piece) != mover_is_white) {
+    return false;
+  }
+  if (piece_type(moving_piece) == kPawn && !pawn_move_is_forward(moving_piece, move)) {
+    return false;
+  }
   const GameState next = apply_move(state, move);
   const int king_sq = find_king(next.board, mover_is_white);
   return king_sq >= 0 && !is_square_attacked(next, king_sq, !mover_is_white);
@@ -1143,11 +1178,11 @@ void draw_sidebar(SDL_Renderer* renderer, const Theme& theme, const GameState& g
   draw_text(renderer, "START PAUSE", kPanelX + 18, kPanelY + 186, 1, theme.text, false);
   draw_text(renderer, "SELECT EXIT", kPanelX + 18, kPanelY + 202, 1, theme.text, false);
 
-  draw_text(renderer, "RULES", left_x, kPanelY + 238, 2, theme.muted, false);
-  draw_text(renderer, "CASTLING", kPanelX + 18, kPanelY + 268, 1, theme.text, false);
-  draw_text(renderer, "EN PASSANT", kPanelX + 18, kPanelY + 284, 1, theme.text, false);
-  draw_text(renderer, "PROMOTION", kPanelX + 18, kPanelY + 300, 1, theme.text, false);
-  draw_text(renderer, "CPU DEPTH 4", kPanelX + 18, kPanelY + 316, 1, theme.muted, false);
+  draw_text(renderer, "RULES", left_x, kPanelY + 232, 2, theme.muted, false);
+  draw_text(renderer, "CASTLING", kPanelX + 18, kPanelY + 260, 1, theme.text, false);
+  draw_text(renderer, "EN PASSANT", kPanelX + 18, kPanelY + 276, 1, theme.text, false);
+  draw_text(renderer, "PROMOTION", kPanelX + 18, kPanelY + 292, 1, theme.text, false);
+  draw_text(renderer, "CPU DEPTH 4", kPanelX + 18, kPanelY + 308, 1, theme.muted, false);
 }
 
 void draw_overlay(SDL_Renderer* renderer, const Theme& theme, const std::string& title, const std::string& subtitle) {

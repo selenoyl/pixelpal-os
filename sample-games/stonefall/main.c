@@ -110,6 +110,52 @@ static void trigger_tone(tone_state* tone, float frequency, int milliseconds) {
   tone->frames_remaining = (48000 * milliseconds) / 1000;
 }
 
+static int gravity_frames_for_level(int level_index) {
+  if (level_index <= 0) {
+    return 48;
+  }
+  if (level_index == 1) {
+    return 43;
+  }
+  if (level_index == 2) {
+    return 38;
+  }
+  if (level_index == 3) {
+    return 33;
+  }
+  if (level_index == 4) {
+    return 28;
+  }
+  if (level_index == 5) {
+    return 23;
+  }
+  if (level_index == 6) {
+    return 18;
+  }
+  if (level_index == 7) {
+    return 13;
+  }
+  if (level_index == 8) {
+    return 8;
+  }
+  if (level_index == 9) {
+    return 6;
+  }
+  if (level_index <= 12) {
+    return 5;
+  }
+  if (level_index <= 15) {
+    return 4;
+  }
+  if (level_index <= 18) {
+    return 3;
+  }
+  if (level_index <= 28) {
+    return 2;
+  }
+  return 1;
+}
+
 static int random_piece_type(void) {
   return rand() % 7;
 }
@@ -670,11 +716,10 @@ int main(int argc, char** argv) {
   last_drop = SDL_GetTicks();
 
   while (!pp_should_exit(&context)) {
-    Uint32 now = SDL_GetTicks();
-    int drop_interval = 600 - ((level - 1) * 45);
-    if (drop_interval < 120) {
-      drop_interval = 120;
-    }
+  Uint32 now = SDL_GetTicks();
+    const int gravity_level = maximum(0, level - 1);
+    int drop_interval = (gravity_frames_for_level(gravity_level) * 1000) / 60;
+    drop_interval = maximum(16, drop_interval);
 
     pp_poll_input(&context, &input);
 
@@ -751,7 +796,7 @@ int main(int argc, char** argv) {
           lines_cleared_last = cleared;
           score += score_for_lines(cleared);
           total_lines += cleared;
-          level = 1 + (total_lines / 6);
+          level = 1 + (total_lines / 10);
           if (cleared > 0) {
             trigger_tone(&tone, 660.0f, 110);
           } else {

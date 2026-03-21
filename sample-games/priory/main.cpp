@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <cstdint>
@@ -14,6 +15,7 @@
 #include <queue>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -380,7 +382,24 @@ struct Note {
   int duration_ms = 0;
 };
 
+constexpr std::array<Note, 47> kTitleTheme = {{
+    {261.63f, 220}, {329.63f, 220}, {392.00f, 320}, {329.63f, 220}, {293.66f, 220}, {329.63f, 220},
+    {392.00f, 360}, {440.00f, 320}, {392.00f, 220}, {349.23f, 220}, {329.63f, 220}, {293.66f, 220},
+    {261.63f, 420}, {0.0f, 120},
+
+    {329.63f, 220}, {392.00f, 220}, {440.00f, 320}, {392.00f, 220}, {349.23f, 220}, {329.63f, 220},
+    {293.66f, 320}, {261.63f, 320}, {293.66f, 220}, {329.63f, 220}, {392.00f, 320}, {293.66f, 420},
+    {0.0f, 140},
+
+    {196.00f, 260}, {261.63f, 240}, {293.66f, 240}, {329.63f, 340}, {293.66f, 220}, {261.63f, 220},
+    {293.66f, 220}, {392.00f, 360}, {349.23f, 220}, {329.63f, 220}, {293.66f, 220}, {261.63f, 220},
+    {220.00f, 420}, {0.0f, 140},
+
+    {261.63f, 220}, {293.66f, 220}, {329.63f, 260}, {392.00f, 260}, {329.63f, 260}, {261.63f, 480},
+}};
+
 struct AudioState {
+  std::atomic<bool> active{true};
   float melody_phase = 0.0f;
   float melody_frequency = 0.0f;
   int melody_samples_remaining = 0;
@@ -898,6 +917,416 @@ std::string uppercase(std::string value) {
     return static_cast<char>(std::toupper(ch));
   });
   return value;
+}
+
+struct ProjectJsonValue {
+  enum class Type {
+    Null = 0,
+    Bool,
+    Number,
+    String,
+    Array,
+    Object,
+  };
+
+  Type type = Type::Null;
+  bool bool_value = false;
+  double number_value = 0.0;
+  std::string string_value;
+  std::vector<ProjectJsonValue> array_value;
+  std::map<std::string, ProjectJsonValue> object_value;
+};
+
+ProjectJsonValue make_project_json_null() {
+  return {};
+}
+
+ProjectJsonValue make_project_json_bool(bool value) {
+  ProjectJsonValue node;
+  node.type = ProjectJsonValue::Type::Bool;
+  node.bool_value = value;
+  return node;
+}
+
+ProjectJsonValue make_project_json_number(double value) {
+  ProjectJsonValue node;
+  node.type = ProjectJsonValue::Type::Number;
+  node.number_value = value;
+  return node;
+}
+
+ProjectJsonValue make_project_json_string(std::string value) {
+  ProjectJsonValue node;
+  node.type = ProjectJsonValue::Type::String;
+  node.string_value = std::move(value);
+  return node;
+}
+
+ProjectJsonValue make_project_json_array(std::vector<ProjectJsonValue> value = {}) {
+  ProjectJsonValue node;
+  node.type = ProjectJsonValue::Type::Array;
+  node.array_value = std::move(value);
+  return node;
+}
+
+ProjectJsonValue make_project_json_object(std::map<std::string, ProjectJsonValue> value = {}) {
+  ProjectJsonValue node;
+  node.type = ProjectJsonValue::Type::Object;
+  node.object_value = std::move(value);
+  return node;
+}
+
+std::string project_json_escape(const std::string& value) {
+  std::string escaped;
+  escaped.reserve(value.size() + 8);
+  for (unsigned char ch : value) {
+    switch (ch) {
+      case '\\': escaped += "\\\\"; break;
+      case '"': escaped += "\\\""; break;
+      case '\n': escaped += "\\n"; break;
+      case '\r': escaped += "\\r"; break;
+      case '\t': escaped += "\\t"; break;
+      default:
+        if (ch < 0x20) {
+          char buffer[7];
+          std::snprintf(buffer, sizeof(buffer), "\\u%04x", static_cast<unsigned int>(ch));
+          escaped += buffer;
+        } else {
+          escaped.push_back(static_cast<char>(ch));
+        }
+        break;
+    }
+  }
+  return escaped;
+}
+
+void write_project_json_indent(std::ostream* output, int indent) {
+  for (int index = 0; index < indent; ++index) {
+    *output << ' ';
+  }
+}
+
+void write_project_json_value(const ProjectJsonValue& value, std::ostream* output, int indent);
+
+void write_project_json_value(const ProjectJsonValue& value, std::ostream* output, int indent) {
+  switch (value.type) {
+    case ProjectJsonValue::Type::Null:
+      *output << "null";
+      return;
+    case ProjectJsonValue::Type::Bool:
+      *output << (value.bool_value ? "true" : "false");
+      return;
+    case ProjectJsonValue::Type::Number: {
+      std::ostringstream stream;
+      stream << value.number_value;
+      *output << stream.str();
+      return;
+    }
+    case ProjectJsonValue::Type::String:
+      *output << '"' << project_json_escape(value.string_value) << '"';
+      return;
+    case ProjectJsonValue::Type::Array:
+      *output << "[";
+      if (!value.array_value.empty()) {
+        *output << "\n";
+        for (std::size_t index = 0; index < value.array_value.size(); ++index) {
+          write_project_json_indent(output, indent + 2);
+          write_project_json_value(value.array_value[index], output, indent + 2);
+          if (index + 1 < value.array_value.size()) {
+            *output << ",";
+          }
+          *output << "\n";
+        }
+        write_project_json_indent(output, indent);
+      }
+      *output << "]";
+      return;
+    case ProjectJsonValue::Type::Object:
+      *output << "{";
+      if (!value.object_value.empty()) {
+        *output << "\n";
+        std::size_t index = 0;
+        for (const auto& entry : value.object_value) {
+          write_project_json_indent(output, indent + 2);
+          *output << '"' << project_json_escape(entry.first) << "\": ";
+          write_project_json_value(entry.second, output, indent + 2);
+          if (index + 1 < value.object_value.size()) {
+            *output << ",";
+          }
+          *output << "\n";
+          ++index;
+        }
+        write_project_json_indent(output, indent);
+      }
+      *output << "}";
+      return;
+  }
+}
+
+class ProjectJsonParser {
+ public:
+  explicit ProjectJsonParser(std::string_view text) : text_(text) {}
+
+  bool parse(ProjectJsonValue* out, std::string* error) {
+    skip_whitespace();
+    if (!parse_value(out, error)) {
+      return false;
+    }
+    skip_whitespace();
+    if (position_ != text_.size()) {
+      if (error != nullptr) {
+        *error = "Unexpected trailing JSON content.";
+      }
+      return false;
+    }
+    return true;
+  }
+
+ private:
+  bool parse_value(ProjectJsonValue* out, std::string* error);
+  bool parse_literal(std::string_view token, ProjectJsonValue value, ProjectJsonValue* out, std::string* error);
+  bool parse_number(ProjectJsonValue* out, std::string* error);
+  bool parse_string(std::string* out, std::string* error);
+  bool parse_array(ProjectJsonValue* out, std::string* error);
+  bool parse_object(ProjectJsonValue* out, std::string* error);
+  void skip_whitespace() {
+    while (position_ < text_.size() && std::isspace(static_cast<unsigned char>(text_[position_])) != 0) {
+      ++position_;
+    }
+  }
+
+  std::string_view text_;
+  std::size_t position_ = 0;
+};
+
+bool ProjectJsonParser::parse_value(ProjectJsonValue* out, std::string* error) {
+  skip_whitespace();
+  if (position_ >= text_.size()) {
+    if (error != nullptr) {
+      *error = "Unexpected end of JSON.";
+    }
+    return false;
+  }
+
+  const char ch = text_[position_];
+  if (ch == '"') {
+    std::string value;
+    if (!parse_string(&value, error)) {
+      return false;
+    }
+    *out = make_project_json_string(std::move(value));
+    return true;
+  }
+  if (ch == '{') {
+    return parse_object(out, error);
+  }
+  if (ch == '[') {
+    return parse_array(out, error);
+  }
+  if (ch == 't') {
+    return parse_literal("true", make_project_json_bool(true), out, error);
+  }
+  if (ch == 'f') {
+    return parse_literal("false", make_project_json_bool(false), out, error);
+  }
+  if (ch == 'n') {
+    return parse_literal("null", make_project_json_null(), out, error);
+  }
+  if (ch == '-' || (ch >= '0' && ch <= '9')) {
+    return parse_number(out, error);
+  }
+  if (error != nullptr) {
+    *error = "Unexpected JSON token.";
+  }
+  return false;
+}
+
+bool ProjectJsonParser::parse_literal(std::string_view token,
+                                      ProjectJsonValue value,
+                                      ProjectJsonValue* out,
+                                      std::string* error) {
+  for (char expected : token) {
+    if (position_ >= text_.size() || text_[position_] != expected) {
+      if (error != nullptr) {
+        *error = "Invalid JSON literal.";
+      }
+      return false;
+    }
+    ++position_;
+  }
+  *out = std::move(value);
+  return true;
+}
+
+bool ProjectJsonParser::parse_number(ProjectJsonValue* out, std::string* error) {
+  const std::size_t start = position_;
+  if (text_[position_] == '-') {
+    ++position_;
+  }
+  while (position_ < text_.size() && std::isdigit(static_cast<unsigned char>(text_[position_])) != 0) {
+    ++position_;
+  }
+  if (position_ < text_.size() && text_[position_] == '.') {
+    ++position_;
+    while (position_ < text_.size() && std::isdigit(static_cast<unsigned char>(text_[position_])) != 0) {
+      ++position_;
+    }
+  }
+
+  char* end = nullptr;
+  const std::string token(text_.substr(start, position_ - start));
+  const double value = std::strtod(token.c_str(), &end);
+  if (end == nullptr || *end != '\0') {
+    if (error != nullptr) {
+      *error = "Invalid JSON number.";
+    }
+    return false;
+  }
+  *out = make_project_json_number(value);
+  return true;
+}
+
+bool ProjectJsonParser::parse_string(std::string* out, std::string* error) {
+  if (position_ >= text_.size() || text_[position_] != '"') {
+    if (error != nullptr) {
+      *error = "Expected JSON string.";
+    }
+    return false;
+  }
+  ++position_;
+  out->clear();
+  while (position_ < text_.size()) {
+    const char ch = text_[position_++];
+    if (ch == '"') {
+      return true;
+    }
+    if (ch == '\\') {
+      if (position_ >= text_.size()) {
+        break;
+      }
+      const char escaped = text_[position_++];
+      switch (escaped) {
+        case '"': out->push_back('"'); break;
+        case '\\': out->push_back('\\'); break;
+        case '/': out->push_back('/'); break;
+        case 'b': out->push_back('\b'); break;
+        case 'f': out->push_back('\f'); break;
+        case 'n': out->push_back('\n'); break;
+        case 'r': out->push_back('\r'); break;
+        case 't': out->push_back('\t'); break;
+        default:
+          if (error != nullptr) {
+            *error = "Unsupported JSON escape.";
+          }
+          return false;
+      }
+    } else {
+      out->push_back(ch);
+    }
+  }
+  if (error != nullptr) {
+    *error = "Unterminated JSON string.";
+  }
+  return false;
+}
+
+bool ProjectJsonParser::parse_array(ProjectJsonValue* out, std::string* error) {
+  ++position_;
+  ProjectJsonValue array = make_project_json_array();
+  skip_whitespace();
+  if (position_ < text_.size() && text_[position_] == ']') {
+    ++position_;
+    *out = std::move(array);
+    return true;
+  }
+  while (position_ < text_.size()) {
+    ProjectJsonValue item;
+    if (!parse_value(&item, error)) {
+      return false;
+    }
+    array.array_value.push_back(std::move(item));
+    skip_whitespace();
+    if (position_ < text_.size() && text_[position_] == ',') {
+      ++position_;
+      skip_whitespace();
+      continue;
+    }
+    if (position_ < text_.size() && text_[position_] == ']') {
+      ++position_;
+      *out = std::move(array);
+      return true;
+    }
+  }
+  if (error != nullptr) {
+    *error = "Unterminated JSON array.";
+  }
+  return false;
+}
+
+bool ProjectJsonParser::parse_object(ProjectJsonValue* out, std::string* error) {
+  ++position_;
+  ProjectJsonValue object = make_project_json_object();
+  skip_whitespace();
+  if (position_ < text_.size() && text_[position_] == '}') {
+    ++position_;
+    *out = std::move(object);
+    return true;
+  }
+  while (position_ < text_.size()) {
+    std::string key;
+    if (!parse_string(&key, error)) {
+      return false;
+    }
+    skip_whitespace();
+    if (position_ >= text_.size() || text_[position_] != ':') {
+      if (error != nullptr) {
+        *error = "Expected ':' in JSON object.";
+      }
+      return false;
+    }
+    ++position_;
+    skip_whitespace();
+    ProjectJsonValue value;
+    if (!parse_value(&value, error)) {
+      return false;
+    }
+    object.object_value[key] = std::move(value);
+    skip_whitespace();
+    if (position_ < text_.size() && text_[position_] == ',') {
+      ++position_;
+      skip_whitespace();
+      continue;
+    }
+    if (position_ < text_.size() && text_[position_] == '}') {
+      ++position_;
+      *out = std::move(object);
+      return true;
+    }
+  }
+  if (error != nullptr) {
+    *error = "Unterminated JSON object.";
+  }
+  return false;
+}
+
+const ProjectJsonValue* project_object_get(const ProjectJsonValue& object, const std::string& key) {
+  if (object.type != ProjectJsonValue::Type::Object) {
+    return nullptr;
+  }
+  const auto found = object.object_value.find(key);
+  return found == object.object_value.end() ? nullptr : &found->second;
+}
+
+std::string project_json_as_string(const ProjectJsonValue* node, std::string fallback = "") {
+  return node != nullptr && node->type == ProjectJsonValue::Type::String ? node->string_value : fallback;
+}
+
+int project_json_as_int(const ProjectJsonValue* node, int fallback = 0) {
+  return node != nullptr && node->type == ProjectJsonValue::Type::Number ? static_cast<int>(std::lround(node->number_value)) : fallback;
+}
+
+bool project_json_as_bool(const ProjectJsonValue* node, bool fallback = false) {
+  return node != nullptr && node->type == ProjectJsonValue::Type::Bool ? node->bool_value : fallback;
 }
 
 std::array<uint8_t, 7> glyph_for(char ch) {
@@ -2160,6 +2589,434 @@ std::vector<Area> build_world() {
     finalize_outdoor_art(&area);
   }
   return world;
+}
+
+std::string project_direction_name(Direction direction) {
+  switch (direction) {
+    case Direction::Up: return "UP";
+    case Direction::Down: return "DOWN";
+    case Direction::Left: return "LEFT";
+    case Direction::Right: return "RIGHT";
+    default: return "NONE";
+  }
+}
+
+Direction project_direction_from_string(std::string value) {
+  value = uppercase(std::move(value));
+  if (value == "UP") return Direction::Up;
+  if (value == "DOWN") return Direction::Down;
+  if (value == "LEFT") return Direction::Left;
+  if (value == "RIGHT") return Direction::Right;
+  return Direction::None;
+}
+
+std::string project_sprite_role_name(SpriteRole role) {
+  switch (role) {
+    case SpriteRole::Player: return "PLAYER";
+    case SpriteRole::Prior: return "PRIOR";
+    case SpriteRole::Sister: return "SISTER";
+    case SpriteRole::Monk: return "MONK";
+    case SpriteRole::Fisher: return "FISHER";
+    case SpriteRole::Merchant: return "MERCHANT";
+    case SpriteRole::Child: return "CHILD";
+    case SpriteRole::Elder: return "ELDER";
+    case SpriteRole::Watchman: return "WATCHMAN";
+    default: return "MONK";
+  }
+}
+
+SpriteRole project_sprite_role_from_string(std::string value) {
+  value = uppercase(std::move(value));
+  if (value == "PLAYER") return SpriteRole::Player;
+  if (value == "PRIOR") return SpriteRole::Prior;
+  if (value == "SISTER") return SpriteRole::Sister;
+  if (value == "FISHER") return SpriteRole::Fisher;
+  if (value == "MERCHANT") return SpriteRole::Merchant;
+  if (value == "CHILD") return SpriteRole::Child;
+  if (value == "ELDER") return SpriteRole::Elder;
+  if (value == "WATCHMAN") return SpriteRole::Watchman;
+  return SpriteRole::Monk;
+}
+
+std::string project_monster_sprite_id(MonsterKind kind) {
+  switch (kind) {
+    case MonsterKind::BogWisp: return "bog_wisp";
+    case MonsterKind::DockHound: return "dock_hound";
+    case MonsterKind::Ratling:
+    default:
+      return "ratling";
+  }
+}
+
+MonsterKind project_monster_kind_from_fields(std::string sprite_id, std::string name) {
+  sprite_id = uppercase(std::move(sprite_id));
+  name = uppercase(std::move(name));
+  if (sprite_id == "BOG_WISP" || sprite_id == "BOGWISP" || name.find("WISP") != std::string::npos) {
+    return MonsterKind::BogWisp;
+  }
+  if (sprite_id == "DOCK_HOUND" || sprite_id == "DOCKHOUND" || name.find("HOUND") != std::string::npos) {
+    return MonsterKind::DockHound;
+  }
+  return MonsterKind::Ratling;
+}
+
+void normalize_project_rows(std::vector<std::string>* rows, int width, int height, char fill) {
+  if (width <= 0 || height <= 0) {
+    rows->clear();
+    return;
+  }
+  if (rows->empty()) {
+    rows->assign(static_cast<std::size_t>(height), std::string(static_cast<std::size_t>(width), fill));
+    return;
+  }
+  for (auto& row : *rows) {
+    if (static_cast<int>(row.size()) < width) {
+      row.resize(static_cast<std::size_t>(width), fill);
+    } else if (static_cast<int>(row.size()) > width) {
+      row.resize(static_cast<std::size_t>(width));
+    }
+  }
+  if (static_cast<int>(rows->size()) < height) {
+    rows->resize(static_cast<std::size_t>(height), std::string(static_cast<std::size_t>(width), fill));
+  } else if (static_cast<int>(rows->size()) > height) {
+    rows->resize(static_cast<std::size_t>(height));
+  }
+}
+
+ProjectJsonValue warp_to_project_json(const Warp& warp) {
+  return make_project_json_object({
+      {"x", make_project_json_number(warp.x)},
+      {"y", make_project_json_number(warp.y)},
+      {"width", make_project_json_number(1)},
+      {"height", make_project_json_number(1)},
+      {"label", make_project_json_string("WARP")},
+      {"target_area", make_project_json_string(warp.target_area)},
+      {"target_x", make_project_json_number(warp.target_x)},
+      {"target_y", make_project_json_number(warp.target_y)},
+      {"target_facing", make_project_json_string(project_direction_name(warp.target_facing))},
+  });
+}
+
+ProjectJsonValue npc_to_project_json(const Npc& npc) {
+  return make_project_json_object({
+      {"id", make_project_json_string(npc.id)},
+      {"name", make_project_json_string(npc.name)},
+      {"role", make_project_json_string(project_sprite_role_name(npc.role))},
+      {"sprite_id", make_project_json_string("")},
+      {"x", make_project_json_number(npc.x)},
+      {"y", make_project_json_number(npc.y)},
+      {"facing", make_project_json_string(project_direction_name(npc.facing))},
+      {"solid", make_project_json_bool(npc.solid)},
+      {"dialogue", make_project_json_string("")},
+  });
+}
+
+ProjectJsonValue monster_to_project_json(const Monster& monster) {
+  return make_project_json_object({
+      {"id", make_project_json_string(monster.id)},
+      {"name", make_project_json_string(monster.name)},
+      {"sprite_id", make_project_json_string(project_monster_sprite_id(monster.kind))},
+      {"x", make_project_json_number(monster.x)},
+      {"y", make_project_json_number(monster.y)},
+      {"facing", make_project_json_string(project_direction_name(monster.facing))},
+      {"max_hp", make_project_json_number(monster.max_hp)},
+      {"attack", make_project_json_number(monster.attack)},
+      {"aggressive", make_project_json_bool(monster.aggressive)},
+  });
+}
+
+ProjectJsonValue area_to_project_json(const Area& area) {
+  std::vector<ProjectJsonValue> rows;
+  rows.reserve(area.tiles.size());
+  std::vector<ProjectJsonValue> wall_rows;
+  wall_rows.reserve(area.tiles.size());
+  std::vector<ProjectJsonValue> warps;
+  warps.reserve(area.warps.size());
+  std::vector<ProjectJsonValue> npcs;
+  npcs.reserve(area.npcs.size());
+  std::vector<ProjectJsonValue> monsters;
+  monsters.reserve(area.monsters.size());
+
+  for (const auto& row : area.tiles) {
+    rows.push_back(make_project_json_string(row));
+    wall_rows.push_back(make_project_json_string(std::string(row.size(), ' ')));
+  }
+  for (const auto& warp : area.warps) {
+    warps.push_back(warp_to_project_json(warp));
+  }
+  for (const auto& npc : area.npcs) {
+    npcs.push_back(npc_to_project_json(npc));
+  }
+  for (const auto& monster : area.monsters) {
+    monsters.push_back(monster_to_project_json(monster));
+  }
+
+  const int width = area.tiles.empty() ? 0 : static_cast<int>(area.tiles.front().size());
+  const int height = static_cast<int>(area.tiles.size());
+  return make_project_json_object({
+      {"id", make_project_json_string(area.id)},
+      {"name", make_project_json_string(area.name)},
+      {"width", make_project_json_number(width)},
+      {"height", make_project_json_number(height)},
+      {"indoor", make_project_json_bool(area.indoor)},
+      {"player_tillable", make_project_json_bool(area.player_tillable)},
+      {"tiles", make_project_json_array(std::move(rows))},
+      {"wall_tiles", make_project_json_array(std::move(wall_rows))},
+      {"warps", make_project_json_array(std::move(warps))},
+      {"npcs", make_project_json_array(std::move(npcs))},
+      {"monsters", make_project_json_array(std::move(monsters))},
+  });
+}
+
+ProjectJsonValue world_to_project_json(const std::vector<Area>& world) {
+  std::vector<ProjectJsonValue> areas;
+  areas.reserve(world.size());
+  for (const auto& area : world) {
+    areas.push_back(area_to_project_json(area));
+  }
+  return make_project_json_object({
+      {"version", make_project_json_number(1)},
+      {"project_name", make_project_json_string("Saint Catherine Arrival")},
+      {"areas", make_project_json_array(std::move(areas))},
+      {"quests", make_project_json_array()},
+      {"stamps", make_project_json_array()},
+      {"sprites", make_project_json_array()},
+  });
+}
+
+bool export_world_project(const std::vector<Area>& world, const std::filesystem::path& path, std::string* error) {
+  std::error_code ec;
+  const auto parent = path.parent_path();
+  if (!parent.empty()) {
+    std::filesystem::create_directories(parent, ec);
+  }
+
+  std::ofstream output(path, std::ios::binary | std::ios::trunc);
+  if (!output) {
+    if (error != nullptr) {
+      *error = "Failed to open project file for writing.";
+    }
+    return false;
+  }
+
+  write_project_json_value(world_to_project_json(world), &output, 0);
+  output << "\n";
+  if (!output.good()) {
+    if (error != nullptr) {
+      *error = "Failed while writing project JSON.";
+    }
+    return false;
+  }
+  return true;
+}
+
+bool load_area_from_project_json(const ProjectJsonValue& node, Area* area) {
+  if (area == nullptr || node.type != ProjectJsonValue::Type::Object) {
+    return false;
+  }
+
+  area->id = project_json_as_string(project_object_get(node, "id"), "area");
+  area->name = project_json_as_string(project_object_get(node, "name"), uppercase(area->id));
+  area->indoor = project_json_as_bool(project_object_get(node, "indoor"), false);
+  area->player_tillable = project_json_as_bool(project_object_get(node, "player_tillable"), false);
+
+  area->tiles.clear();
+  const ProjectJsonValue* rows = project_object_get(node, "tiles");
+  if (rows != nullptr && rows->type == ProjectJsonValue::Type::Array) {
+    for (const auto& row : rows->array_value) {
+      if (row.type == ProjectJsonValue::Type::String) {
+        area->tiles.push_back(row.string_value);
+      }
+    }
+  }
+
+  int width = project_json_as_int(project_object_get(node, "width"), 0);
+  int height = project_json_as_int(project_object_get(node, "height"), static_cast<int>(area->tiles.size()));
+  for (const auto& row : area->tiles) {
+    width = std::max(width, static_cast<int>(row.size()));
+  }
+  height = std::max(height, static_cast<int>(area->tiles.size()));
+  if (width <= 0) {
+    width = 1;
+  }
+  if (height <= 0) {
+    height = 1;
+  }
+  normalize_project_rows(&area->tiles, width, height, area->indoor ? kFloor : kGrass);
+
+  std::vector<std::string> wall_tiles;
+  const ProjectJsonValue* wall_rows = project_object_get(node, "wall_tiles");
+  if (wall_rows != nullptr && wall_rows->type == ProjectJsonValue::Type::Array) {
+    for (const auto& row : wall_rows->array_value) {
+      if (row.type == ProjectJsonValue::Type::String) {
+        wall_tiles.push_back(row.string_value);
+      }
+    }
+  }
+  normalize_project_rows(&wall_tiles, width, height, ' ');
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      const char wall = wall_tiles[static_cast<std::size_t>(y)][static_cast<std::size_t>(x)];
+      if (wall != ' ') {
+        area->tiles[static_cast<std::size_t>(y)][static_cast<std::size_t>(x)] = wall;
+      }
+    }
+  }
+
+  area->warps.clear();
+  const ProjectJsonValue* warps = project_object_get(node, "warps");
+  if (warps != nullptr && warps->type == ProjectJsonValue::Type::Array) {
+    for (const auto& warp_node : warps->array_value) {
+      if (warp_node.type != ProjectJsonValue::Type::Object) {
+        continue;
+      }
+      const int warp_x = project_json_as_int(project_object_get(warp_node, "x"), 0);
+      const int warp_y = project_json_as_int(project_object_get(warp_node, "y"), 0);
+      const int warp_width = std::max(1, project_json_as_int(project_object_get(warp_node, "width"), 1));
+      const int warp_height = std::max(1, project_json_as_int(project_object_get(warp_node, "height"), 1));
+      const std::string target_area = project_json_as_string(project_object_get(warp_node, "target_area"), area->id);
+      const int target_x = project_json_as_int(project_object_get(warp_node, "target_x"), 0);
+      const int target_y = project_json_as_int(project_object_get(warp_node, "target_y"), 0);
+      const Direction target_facing =
+          project_direction_from_string(project_json_as_string(project_object_get(warp_node, "target_facing"), "DOWN"));
+      for (int dy = 0; dy < warp_height; ++dy) {
+        for (int dx = 0; dx < warp_width; ++dx) {
+          area->warps.push_back({warp_x + dx, warp_y + dy, target_area, target_x + dx, target_y + dy, target_facing});
+        }
+      }
+    }
+  }
+
+  area->npcs.clear();
+  const ProjectJsonValue* npcs = project_object_get(node, "npcs");
+  if (npcs != nullptr && npcs->type == ProjectJsonValue::Type::Array) {
+    for (const auto& npc_node : npcs->array_value) {
+      if (npc_node.type != ProjectJsonValue::Type::Object) {
+        continue;
+      }
+      Npc npc;
+      npc.id = project_json_as_string(project_object_get(npc_node, "id"), "npc");
+      npc.name = project_json_as_string(project_object_get(npc_node, "name"), uppercase(npc.id));
+      npc.role = project_sprite_role_from_string(project_json_as_string(project_object_get(npc_node, "role"), "MONK"));
+      npc.x = project_json_as_int(project_object_get(npc_node, "x"), 0);
+      npc.y = project_json_as_int(project_object_get(npc_node, "y"), 0);
+      npc.facing = project_direction_from_string(project_json_as_string(project_object_get(npc_node, "facing"), "DOWN"));
+      npc.solid = project_json_as_bool(project_object_get(npc_node, "solid"), true);
+      area->npcs.push_back(std::move(npc));
+    }
+  }
+
+  area->monsters.clear();
+  const ProjectJsonValue* monsters = project_object_get(node, "monsters");
+  if (monsters != nullptr && monsters->type == ProjectJsonValue::Type::Array) {
+    for (const auto& monster_node : monsters->array_value) {
+      if (monster_node.type != ProjectJsonValue::Type::Object) {
+        continue;
+      }
+      Monster monster;
+      monster.id = project_json_as_string(project_object_get(monster_node, "id"), "monster");
+      monster.name = project_json_as_string(project_object_get(monster_node, "name"), uppercase(monster.id));
+      monster.kind = project_monster_kind_from_fields(
+          project_json_as_string(project_object_get(monster_node, "sprite_id"), ""),
+          monster.name);
+      monster.x = project_json_as_int(project_object_get(monster_node, "x"), 0);
+      monster.y = project_json_as_int(project_object_get(monster_node, "y"), 0);
+      monster.facing =
+          project_direction_from_string(project_json_as_string(project_object_get(monster_node, "facing"), "DOWN"));
+      monster.max_hp = std::max(1, project_json_as_int(project_object_get(monster_node, "max_hp"), 6));
+      monster.hp = monster.max_hp;
+      monster.attack = std::max(1, project_json_as_int(project_object_get(monster_node, "attack"), 1));
+      monster.aggressive = project_json_as_bool(project_object_get(monster_node, "aggressive"), true);
+      area->monsters.push_back(std::move(monster));
+    }
+  }
+
+  if (!area->indoor) {
+    finalize_outdoor_art(area);
+  }
+  return true;
+}
+
+std::vector<std::filesystem::path> priory_project_search_paths() {
+  std::vector<std::filesystem::path> paths;
+#ifdef PRIORY_SOURCE_PROJECT_PATH
+  paths.push_back(std::filesystem::path(PRIORY_SOURCE_PROJECT_PATH));
+#endif
+  if (char* base_path = SDL_GetBasePath(); base_path != nullptr) {
+    const std::filesystem::path exe_dir = std::filesystem::path(base_path);
+    SDL_free(base_path);
+    paths.push_back((exe_dir / ".." / "editor-projects" / "saint-catherine-arrival.json").lexically_normal());
+    paths.push_back((exe_dir / "editor-projects" / "saint-catherine-arrival.json").lexically_normal());
+  }
+  paths.push_back((std::filesystem::current_path() / "sample-games" / "priory" / "editor-projects" /
+                   "saint-catherine-arrival.json")
+                      .lexically_normal());
+
+  std::vector<std::filesystem::path> unique;
+  for (const auto& path : paths) {
+    if (std::find(unique.begin(), unique.end(), path) == unique.end()) {
+      unique.push_back(path);
+    }
+  }
+  return unique;
+}
+
+std::filesystem::path find_priory_project_path() {
+  for (const auto& path : priory_project_search_paths()) {
+    std::error_code ec;
+    if (std::filesystem::exists(path, ec)) {
+      return path;
+    }
+  }
+  return {};
+}
+
+bool apply_priory_project_overrides(std::vector<Area>* world, const std::filesystem::path& path, std::string* error) {
+  if (world == nullptr) {
+    if (error != nullptr) {
+      *error = "Null world target.";
+    }
+    return false;
+  }
+
+  std::ifstream input(path, std::ios::binary);
+  if (!input) {
+    if (error != nullptr) {
+      *error = "Failed to open Priory project file.";
+    }
+    return false;
+  }
+
+  std::stringstream buffer;
+  buffer << input.rdbuf();
+  const std::string project_text = buffer.str();
+  ProjectJsonValue root;
+  ProjectJsonParser parser(project_text);
+  if (!parser.parse(&root, error)) {
+    return false;
+  }
+
+  const ProjectJsonValue* areas = project_object_get(root, "areas");
+  if (areas == nullptr || areas->type != ProjectJsonValue::Type::Array) {
+    if (error != nullptr) {
+      *error = "Priory project is missing an areas array.";
+    }
+    return false;
+  }
+
+  for (const auto& area_node : areas->array_value) {
+    Area loaded_area;
+    if (!load_area_from_project_json(area_node, &loaded_area)) {
+      continue;
+    }
+    auto found = std::find_if(world->begin(), world->end(), [&](const Area& area) { return area.id == loaded_area.id; });
+    if (found != world->end()) {
+      *found = std::move(loaded_area);
+    } else {
+      world->push_back(std::move(loaded_area));
+    }
+  }
+  return true;
 }
 
 Area* mutable_area(GameState* state, const std::string& id) {
@@ -5237,14 +6094,12 @@ void render_journal(SDL_Renderer* renderer, const GameState& state) {
 void render_title(SDL_Renderer* renderer, const GameState& state, Uint32 now) {
   fill_rect(renderer, SDL_Rect{0, 0, kScreenWidth, kScreenHeight}, SDL_Color{112, 172, 204, 255});
   fill_rect(renderer, SDL_Rect{0, 86, kScreenWidth, 138}, SDL_Color{128, 181, 120, 255});
-  fill_rect(renderer, SDL_Rect{28, 12, 200, 54}, SDL_Color{224, 214, 191, 168});
-  draw_rect(renderer, SDL_Rect{28, 12, 200, 54}, SDL_Color{87, 80, 61, 255});
 
-  fill_rect(renderer, SDL_Rect{64, 74, 128, 58}, SDL_Color{173, 112, 88, 255});
-  fill_rect(renderer, SDL_Rect{76, 78, 104, 40}, SDL_Color{202, 140, 116, 255});
-  fill_rect(renderer, SDL_Rect{90, 48, 76, 38}, SDL_Color{124, 68, 70, 255});
-  fill_rect(renderer, SDL_Rect{98, 56, 60, 22}, SDL_Color{156, 85, 85, 255});
-  fill_rect(renderer, SDL_Rect{121, 90, 14, 28}, SDL_Color{112, 79, 48, 255});
+  fill_rect(renderer, SDL_Rect{62, 76, 132, 58}, SDL_Color{173, 112, 88, 255});
+  fill_rect(renderer, SDL_Rect{74, 80, 108, 42}, SDL_Color{202, 140, 116, 255});
+  fill_rect(renderer, SDL_Rect{90, 60, 76, 30}, SDL_Color{124, 68, 70, 255});
+  fill_rect(renderer, SDL_Rect{98, 66, 60, 16}, SDL_Color{156, 85, 85, 255});
+  fill_rect(renderer, SDL_Rect{121, 92, 14, 30}, SDL_Color{112, 79, 48, 255});
   draw_pixel(renderer, 127, 40, SDL_Color{255, 221, 129, 255}, 3);
 
   const int wave = static_cast<int>((now / 150U) % 4U);
@@ -5255,11 +6110,17 @@ void render_title(SDL_Renderer* renderer, const GameState& state, Uint32 now) {
     fill_rect(renderer, SDL_Rect{172 + wave, row + 1, 50, 1}, SDL_Color{138, 195, 232, 255});
   }
 
-  draw_text(renderer, "PRIORY", 128, 18, 4, SDL_Color{248, 240, 222, 255}, true);
-  draw_text_box(renderer, "SAINT CATHERINE", SDL_Rect{38, 46, 180, 12},
+  const SDL_Rect title_panel{24, 8, 208, 62};
+  fill_rect(renderer, title_panel, SDL_Color{228, 220, 198, 236});
+  draw_rect(renderer, title_panel, SDL_Color{87, 80, 61, 255});
+
+  draw_text(renderer, "PRIORY", title_panel.x + title_panel.w / 2, title_panel.y + 6, 4,
+            SDL_Color{248, 240, 222, 255}, true);
+  draw_text_box(renderer, "SAINT CATHERINE", SDL_Rect{title_panel.x + 10, title_panel.y + 34, title_panel.w - 20, 10},
                 TextBoxOptions{2, 1, false, false, 1, 0, TextAlign::Center, TextVerticalAlign::Middle},
                 SDL_Color{70, 84, 62, 255});
-  draw_text_box(renderer, "THE BLACKPINE CHAPTER", SDL_Rect{38, 61, 180, 8},
+  draw_text_box(renderer, "THE BLACKPINE CHAPTER",
+                SDL_Rect{title_panel.x + 10, title_panel.y + 50, title_panel.w - 20, 8},
                 TextBoxOptions{1, 1, false, false, 1, 0, TextAlign::Center, TextVerticalAlign::Middle},
                 SDL_Color{70, 84, 62, 255});
 
@@ -5589,20 +6450,24 @@ bool capture_previews(SDL_Renderer* renderer, pp_context* context) {
 
 void audio_callback(void* userdata, Uint8* stream, int length) {
   AudioState* state = static_cast<AudioState*>(userdata);
+  if (state == nullptr || !state->active.load(std::memory_order_acquire)) {
+    SDL_memset(stream, 0, static_cast<std::size_t>(length));
+    return;
+  }
   int16_t* samples = reinterpret_cast<int16_t*>(stream);
   const int sample_count = length / static_cast<int>(sizeof(int16_t));
-  static const std::array<Note, 16> kTheme = {{
-      {261.63f, 240}, {329.63f, 240}, {392.00f, 320}, {329.63f, 160},
-      {293.66f, 220}, {349.23f, 220}, {392.00f, 320}, {440.00f, 260},
-      {392.00f, 220}, {349.23f, 220}, {329.63f, 260}, {293.66f, 180},
-      {261.63f, 260}, {329.63f, 260}, {293.66f, 260}, {196.00f, 420},
-  }};
 
   for (int index = 0; index < sample_count; ++index) {
     if (state->melody_samples_remaining <= 0) {
-      state->melody_frequency = kTheme[state->note_index].frequency;
-      state->melody_samples_remaining = (48000 * kTheme[state->note_index].duration_ms) / 1000;
-      state->note_index = (state->note_index + 1) % kTheme.size();
+      if (state->note_index >= kTitleTheme.size()) {
+        state->note_index = 0;
+      }
+      state->melody_frequency = kTitleTheme[state->note_index].frequency;
+      state->melody_samples_remaining = (48000 * kTitleTheme[state->note_index].duration_ms) / 1000;
+      if (state->melody_frequency <= 0.0f) {
+        state->melody_phase = 0.0f;
+      }
+      state->note_index = (state->note_index + 1) % kTitleTheme.size();
     }
 
     float sample = 0.0f;
@@ -5612,6 +6477,8 @@ void audio_callback(void* userdata, Uint8* stream, int length) {
         state->melody_phase -= 6.2831853f;
       }
       sample += (state->melody_phase < 3.1415926f ? 0.10f : -0.10f);
+    }
+    if (state->melody_samples_remaining > 0) {
       --state->melody_samples_remaining;
     }
 
@@ -6498,6 +7365,7 @@ int main(int argc, char** argv) {
   bool capture_previews_mode = false;
   bool force_software_renderer = false;
   bool force_accelerated_renderer = false;
+  std::filesystem::path export_project_path;
   for (int index = 1; index < argc; ++index) {
     if (std::string(argv[index]) == "--smoke-test") {
       smoke_test = true;
@@ -6507,7 +7375,19 @@ int main(int argc, char** argv) {
       force_software_renderer = true;
     } else if (std::string(argv[index]) == "--accelerated-renderer") {
       force_accelerated_renderer = true;
+    } else if (std::string(argv[index]) == "--export-project" && index + 1 < argc) {
+      export_project_path = argv[++index];
     }
+  }
+
+  if (!export_project_path.empty()) {
+    std::string error;
+    if (!export_world_project(build_world(), export_project_path, &error)) {
+      std::fprintf(stderr, "Project export failed: %s\n", error.c_str());
+      return 1;
+    }
+    std::printf("PRIORY PROJECT EXPORTED: %s\n", export_project_path.string().c_str());
+    return 0;
   }
 
   const Uint32 sdl_flags = smoke_test
@@ -6529,6 +7409,12 @@ int main(int argc, char** argv) {
   GameState state;
   state.context = &context;
   state.world = build_world();
+  if (const std::filesystem::path project_path = find_priory_project_path(); !project_path.empty()) {
+    std::string project_error;
+    if (!apply_priory_project_overrides(&state.world, project_path, &project_error)) {
+      std::fprintf(stderr, "Priory project load failed: %s (%s)\n", project_error.c_str(), project_path.string().c_str());
+    }
+  }
   state.smoke_test = smoke_test;
   state.has_save = load_game(&state);
 
@@ -6773,6 +7659,14 @@ int main(int argc, char** argv) {
 
   save_game(state);
   if (device != 0U) {
+    SDL_LockAudioDevice(device);
+    audio.active.store(false, std::memory_order_release);
+    audio.melody_frequency = 0.0f;
+    audio.melody_samples_remaining = 0;
+    audio.bell_frequency = 0.0f;
+    audio.bell_samples_remaining = 0;
+    SDL_UnlockAudioDevice(device);
+    SDL_PauseAudioDevice(device, 1);
     SDL_CloseAudioDevice(device);
   }
   SDL_DestroyRenderer(renderer);

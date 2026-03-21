@@ -24,7 +24,8 @@
 #define PANEL_Y 116
 #define PANEL_W 150
 #define PANEL_H 288
-#define GLITCH_COUNT 20
+#define BASE_GLITCH_COUNT 20
+#define MAX_GLITCH_COUNT 38
 
 typedef struct tone_state {
   float phase;
@@ -299,9 +300,14 @@ static void compute_adjacency(tile board[GRID_HEIGHT][GRID_WIDTH]) {
   }
 }
 
-static void place_glitches(tile board[GRID_HEIGHT][GRID_WIDTH], int safe_x, int safe_y) {
+static int glitch_count_for_level(int level) {
+  int count = BASE_GLITCH_COUNT + (level - 1) * 2;
+  return minimum(MAX_GLITCH_COUNT, maximum(BASE_GLITCH_COUNT, count));
+}
+
+static void place_glitches(tile board[GRID_HEIGHT][GRID_WIDTH], int safe_x, int safe_y, int glitch_count) {
   int placed = 0;
-  while (placed < GLITCH_COUNT) {
+  while (placed < glitch_count) {
     int x = rand() % GRID_WIDTH;
     int y = rand() % GRID_HEIGHT;
     if (board[y][x].glitch) {
@@ -355,9 +361,9 @@ static void flood_reveal(tile board[GRID_HEIGHT][GRID_WIDTH], int start_x, int s
   }
 }
 
-static void begin_grid(tile board[GRID_HEIGHT][GRID_WIDTH], int first_x, int first_y) {
+static void begin_grid(tile board[GRID_HEIGHT][GRID_WIDTH], int first_x, int first_y, int glitch_count) {
   clear_board(board);
-  place_glitches(board, first_x, first_y);
+  place_glitches(board, first_x, first_y, glitch_count);
   compute_adjacency(board);
 }
 
@@ -466,6 +472,8 @@ static void draw_board(SDL_Renderer* renderer,
 }
 
 static void draw_sidebar(SDL_Renderer* renderer,
+                         int level,
+                         int glitch_count,
                          int elapsed_ms,
                          int best_time_ms,
                          int revealed_safe,
@@ -489,24 +497,26 @@ static void draw_sidebar(SDL_Renderer* renderer,
   }
   draw_text_right(renderer, buffer, right_x, PANEL_Y + 84, 2, k_text);
 
-  draw_text(renderer, "SAFE", left_x, PANEL_Y + 122, 1, k_muted, 0);
-  snprintf(buffer, sizeof(buffer), "%d/%d", revealed_safe, GRID_WIDTH * GRID_HEIGHT - GLITCH_COUNT);
+  draw_text(renderer, "LEVEL", left_x, PANEL_Y + 122, 1, k_muted, 0);
+  snprintf(buffer, sizeof(buffer), "%d", level);
   draw_text_right(renderer, buffer, right_x, PANEL_Y + 136, 2, k_text);
 
-  draw_text(renderer, "FLAGS", left_x, PANEL_Y + 174, 1, k_muted, 0);
-  snprintf(buffer, sizeof(buffer), "%d/%d", flags_used, GLITCH_COUNT);
-  draw_text_right(renderer, buffer, right_x, PANEL_Y + 188, 2, k_text);
+  draw_text(renderer, "SAFE", left_x, PANEL_Y + 164, 1, k_muted, 0);
+  snprintf(buffer, sizeof(buffer), "%d/%d", revealed_safe, GRID_WIDTH * GRID_HEIGHT - glitch_count);
+  draw_text_right(renderer, buffer, right_x, PANEL_Y + 178, 2, k_text);
 
-  fill_rect(renderer, (SDL_Rect){PANEL_X + 12, PANEL_Y + 222, PANEL_W - 24, 98}, k_panel_highlight);
-  stroke_rect(renderer, (SDL_Rect){PANEL_X + 12, PANEL_Y + 222, PANEL_W - 24, 98}, k_grid_frame);
-  draw_text(renderer, "SCAN", PANEL_X + 20, PANEL_Y + 236, 1, k_muted, 0);
-  draw_text_right(renderer, "A", PANEL_X + PANEL_W - 20, PANEL_Y + 236, 1, k_text);
-  draw_text(renderer, "MARK", PANEL_X + 20, PANEL_Y + 258, 1, k_muted, 0);
-  draw_text_right(renderer, "B", PANEL_X + PANEL_W - 20, PANEL_Y + 258, 1, k_text);
-  draw_text(renderer, "MOVE", PANEL_X + 20, PANEL_Y + 280, 1, k_muted, 0);
-  draw_text_right(renderer, "DPAD", PANEL_X + PANEL_W - 20, PANEL_Y + 280, 1, k_text);
-  draw_text(renderer, "START", PANEL_X + 20, PANEL_Y + 302, 1, k_muted, 0);
-  draw_text_right(renderer, "PAUSE", PANEL_X + PANEL_W - 20, PANEL_Y + 302, 1, k_text);
+  draw_text(renderer, "FLAGS", left_x, PANEL_Y + 206, 1, k_muted, 0);
+  snprintf(buffer, sizeof(buffer), "%d/%d", flags_used, glitch_count);
+  draw_text_right(renderer, buffer, right_x, PANEL_Y + 220, 2, k_text);
+
+  fill_rect(renderer, (SDL_Rect){PANEL_X + 12, PANEL_Y + 250, PANEL_W - 24, 70}, k_panel_highlight);
+  stroke_rect(renderer, (SDL_Rect){PANEL_X + 12, PANEL_Y + 250, PANEL_W - 24, 70}, k_grid_frame);
+  draw_text(renderer, "SCAN", PANEL_X + 20, PANEL_Y + 262, 1, k_muted, 0);
+  draw_text_right(renderer, "A", PANEL_X + PANEL_W - 20, PANEL_Y + 262, 1, k_text);
+  draw_text(renderer, "MARK", PANEL_X + 20, PANEL_Y + 280, 1, k_muted, 0);
+  draw_text_right(renderer, "B", PANEL_X + PANEL_W - 20, PANEL_Y + 280, 1, k_text);
+  draw_text(renderer, "MOVE", PANEL_X + 20, PANEL_Y + 298, 1, k_muted, 0);
+  draw_text_right(renderer, "DPAD", PANEL_X + PANEL_W - 20, PANEL_Y + 298, 1, k_text);
 }
 
 static void draw_overlay(SDL_Renderer* renderer, const char* title, const char* subtitle, const char* prompt) {
@@ -519,6 +529,8 @@ static void draw_overlay(SDL_Renderer* renderer, const char* title, const char* 
 
 static void render_scene(SDL_Renderer* renderer,
                          tile board[GRID_HEIGHT][GRID_WIDTH],
+                         int level,
+                         int glitch_count,
                          int cursor_x,
                          int cursor_y,
                          int started,
@@ -538,14 +550,14 @@ static void render_scene(SDL_Renderer* renderer,
   draw_text(renderer, "SCAN SAFE SECTORS / AVOID CORRUPTED NODES", VIRTUAL_WIDTH / 2, 84, 1, k_muted, 1);
 
   draw_board(renderer, board, cursor_x, cursor_y, game_over || won, ticks);
-  draw_sidebar(renderer, elapsed_ms, best_time_ms, revealed_safe, flags_used);
+  draw_sidebar(renderer, level, glitch_count, elapsed_ms, best_time_ms, revealed_safe, flags_used);
 
   if (ready_prompt_visible && !started && !game_over && !won) {
-    draw_overlay(renderer, "READY", "FIRST SCAN IS SAFE", "A TO SCAN / B TO MARK");
+    draw_overlay(renderer, "READY", "FIRST SCAN IS SAFE", "LEVEL CLIMBS AFTER EACH CLEAR");
   } else if (paused) {
     draw_overlay(renderer, "PAUSED", "GRID SCAN HALTED", "START TO RESUME");
   } else if (won) {
-    draw_overlay(renderer, "SYSTEM STABLE", "ALL SAFE SECTORS CLEARED", "A OR START FOR NEW GRID");
+    draw_overlay(renderer, "SYSTEM STABLE", "ALL SAFE SECTORS CLEARED", "A OR START FOR NEXT LEVEL");
   } else if (game_over) {
     draw_overlay(renderer, "GRID CORRUPTED", "YOU HIT A GLITCH NODE", "A OR START FOR NEW GRID");
   }
@@ -589,6 +601,8 @@ int main(int argc, char** argv) {
   int paused = 0;
   int game_over = 0;
   int won = 0;
+  int level = 1;
+  int glitch_count = BASE_GLITCH_COUNT;
   int revealed_safe = 0;
   int best_time_ms = 0;
   int elapsed_snapshot = 0;
@@ -682,16 +696,20 @@ int main(int argc, char** argv) {
 
     if (input.start && !previous_input.start) {
       if (game_over || won) {
+        const int advance_level = won;
         clear_board(board);
         started = 0;
         paused = 0;
         game_over = 0;
         won = 0;
+        level = advance_level ? level + 1 : 1;
+        glitch_count = glitch_count_for_level(level);
         revealed_safe = 0;
         elapsed_snapshot = 0;
         cursor_x = 0;
         cursor_y = 0;
         ready_prompt_visible = 1;
+        started_at = 0U;
         paused_at = 0U;
         trigger_tone(&tone, 780.0f, 80);
       } else {
@@ -718,22 +736,26 @@ int main(int argc, char** argv) {
 
     if ((input.a && !previous_input.a) && !paused) {
       if (game_over || won) {
+        const int advance_level = won;
         clear_board(board);
         started = 0;
         paused = 0;
         game_over = 0;
         won = 0;
+        level = advance_level ? level + 1 : 1;
+        glitch_count = glitch_count_for_level(level);
         revealed_safe = 0;
         elapsed_snapshot = 0;
         cursor_x = 0;
         cursor_y = 0;
         ready_prompt_visible = 1;
+        started_at = 0U;
         paused_at = 0U;
         trigger_tone(&tone, 780.0f, 80);
       } else {
         int triggered_glitch = 0;
         if (!started) {
-          begin_grid(board, cursor_x, cursor_y);
+          begin_grid(board, cursor_x, cursor_y, glitch_count);
           started = 1;
           started_at = now;
           elapsed_snapshot = 0;
@@ -743,7 +765,7 @@ int main(int argc, char** argv) {
           game_over = 1;
           elapsed_snapshot = (int)(now - started_at);
           trigger_tone(&tone, 160.0f, 240);
-        } else if (revealed_safe >= GRID_WIDTH * GRID_HEIGHT - GLITCH_COUNT) {
+        } else if (revealed_safe >= GRID_WIDTH * GRID_HEIGHT - glitch_count) {
           won = 1;
           elapsed_snapshot = (int)(now - started_at);
           if (best_time_ms == 0 || elapsed_snapshot < best_time_ms) {
@@ -757,7 +779,7 @@ int main(int argc, char** argv) {
       }
     }
 
-    render_scene(renderer, board, cursor_x, cursor_y, started, ready_prompt_visible,
+    render_scene(renderer, board, level, glitch_count, cursor_x, cursor_y, started, ready_prompt_visible,
                  paused, game_over, won,
                  elapsed_snapshot, best_time_ms, revealed_safe, now);
     SDL_RenderPresent(renderer);

@@ -368,6 +368,14 @@ struct EditorState {
   std::vector<EditorSnapshot> undo_stack;
 };
 
+std::string default_project_path() {
+#ifdef PRIORY_EDITOR_DEFAULT_PROJECT_PATH
+  return PRIORY_EDITOR_DEFAULT_PROJECT_PATH;
+#else
+  return "sample-games/priory/editor-projects/saint-catherine-arrival.json";
+#endif
+}
+
 void normalize_sprite_asset(SpriteAsset* asset);
 void push_undo_snapshot(EditorState* state);
 NpcData* current_npc(EditorState* state);
@@ -5563,8 +5571,14 @@ int main(int argc, char** argv) {
 
   EditorState state;
   state.project = make_seed_project();
-  state.project_path = "sample-games/priory/editor-projects/saint-catherine-arrival.json";
+  state.project_path = default_project_path();
   state.resolution_index = default_resolution_index();
+  std::string load_error;
+  ProjectData loaded_project;
+  if (load_project(&loaded_project, state.project_path, &load_error)) {
+    state.project = std::move(loaded_project);
+    state.dirty = false;
+  }
   sanitize_selection(&state);
 
   bool running = true;

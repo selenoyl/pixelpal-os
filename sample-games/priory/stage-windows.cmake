@@ -10,6 +10,10 @@ foreach(asset manifest.toml icon.ppm splash.ppm)
   file(COPY "${source_dir}/${asset}" DESTINATION "${dest_root}")
 endforeach()
 
+if(EXISTS "${source_dir}/editor-projects")
+  file(COPY "${source_dir}/editor-projects" DESTINATION "${dest_root}")
+endif()
+
 file(COPY "${exe_path}" DESTINATION "${dest_root}/bin")
 
 foreach(runtime_dll

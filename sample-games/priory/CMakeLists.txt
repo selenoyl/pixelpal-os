@@ -15,7 +15,11 @@ target_include_directories(priory
     ${CMAKE_SOURCE_DIR}/sdk/include
 )
 
-target_compile_definitions(priory PRIVATE SDL_MAIN_HANDLED)
+target_compile_definitions(priory
+  PRIVATE
+    SDL_MAIN_HANDLED
+    PRIORY_SOURCE_PROJECT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/editor-projects/saint-catherine-arrival.json"
+)
 target_compile_features(priory PRIVATE cxx_std_20)
 
 if(UNIX AND NOT APPLE)
@@ -43,5 +47,9 @@ install(FILES
   manifest.toml
   icon.ppm
   splash.ppm
+  DESTINATION opt/pixelpal/games/priory
+)
+install(DIRECTORY
+  editor-projects
   DESTINATION opt/pixelpal/games/priory
 )

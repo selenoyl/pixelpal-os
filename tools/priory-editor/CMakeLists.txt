@@ -9,7 +9,11 @@ target_link_libraries(priory-editor
     SDL2::SDL2
 )
 
-target_compile_definitions(priory-editor PRIVATE SDL_MAIN_HANDLED)
+target_compile_definitions(priory-editor
+  PRIVATE
+    SDL_MAIN_HANDLED
+    PRIORY_EDITOR_DEFAULT_PROJECT_PATH="${CMAKE_SOURCE_DIR}/sample-games/priory/editor-projects/saint-catherine-arrival.json"
+)
 target_compile_features(priory-editor PRIVATE cxx_std_20)
 
 if(UNIX AND NOT APPLE)
